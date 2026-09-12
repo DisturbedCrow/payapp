@@ -7,7 +7,8 @@ which is bound to a specific user. This prevents:
   - Signature forgery (T7)
   - Blob tampering (T9)
 
-The canonical payload format MUST match the Flutter client exactly:
+The canonical payload format lives in app/services/signing.py and MUST
+match the Flutter client byte-for-byte:
   {id}|{sender_id}|{receiver_id}|{amount:.2f}|{timestamp_utc_iso}|{nonce}
 """
 
@@ -27,27 +28,16 @@ from cryptography.exceptions import InvalidSignature
 from sqlalchemy.orm import Session
 
 from ..models import DeviceBinding, NonceRegistry, User
+from .signing import canonical_payload
 
 
 def build_canonical_payload(blob: dict) -> str:
     """Build the canonical string that was signed by the client.
-    Must produce byte-identical output to the Flutter client."""
-    blob_id = blob.get("id", "")
-    sender_id = blob.get("sender_id", "")
-    receiver_id = blob.get("receiver_id", "")
-    amount = float(blob.get("amount", 0))
-    timestamp = blob.get("timestamp", "")
-    nonce = blob.get("nonce", "")
 
-    # Ensure timestamp is in UTC ISO format matching Dart's toUtc().toIso8601String()
-    if isinstance(timestamp, str) and not timestamp.endswith("Z"):
-        try:
-            dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-            timestamp = dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-        except (ValueError, AttributeError):
-            pass
-
-    return f"{blob_id}|{sender_id}|{receiver_id}|{amount:.2f}|{timestamp}|{nonce}"
+    Delegates to app.services.signing so the format lives in exactly one
+    place and is covered by the shared Dart/Python test vector.
+    """
+    return canonical_payload(blob)
 
 
 def decode_public_key_from_base64(b64_key: str) -> Optional[EllipticCurvePublicKey]:
@@ -114,7 +104,9 @@ def verify_blob_signature(
         public_key = decode_public_key_from_base64(sender_public_key_b64)
 
     if public_key is None:
-        return False, "no_valid_public_key"
+        # No device key has ever been registered for this sender and the blob
+        # did not carry one. Feature B calls this `unsigned_device`.
+        return False, "unsigned_device"
 
     # Build canonical payload
     canonical = build_canonical_payload(blob)

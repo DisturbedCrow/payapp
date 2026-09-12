@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SetuPay Live</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --panel:#121829; --panel2:#0e1424; --line:#1e2740;
+    --ink:#e8edf7; --dim:#93a0bd;
+    --green:#2fd07a; --red:#ff4d5e; --amber:#ffb020;
+    --indigo:#6b7dff; --saffron:#ff9933;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--ink); font-size:18px;
+    font-family:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  /* ── Toast ─────────────────────────────────────────── */
+  #toast{
+    position:fixed; inset:0 0 auto 0; z-index:50;
+    background:linear-gradient(90deg,#7a1020,#c0182f);
+    color:#fff; font-size:30px; font-weight:800; letter-spacing:.3px;
+    padding:18px 28px; text-align:center;
+    transform:translateY(-110%); transition:transform .28s ease;
+    box-shadow:0 8px 40px rgba(255,77,94,.35);
+  }
+  #toast.show{transform:translateY(0)}
+  /* ── Header ────────────────────────────────────────── */
+  header{
+    display:flex; align-items:center; gap:28px;
+    padding:18px 28px; border-bottom:1px solid var(--line);
+    background:var(--panel2);
+  }
+  .brand{font-size:34px; font-weight:800; letter-spacing:-.5px; white-space:nowrap}
+  .brand .accent{color:var(--saffron)}
+  .conn{display:flex; align-items:center; gap:9px; font-size:17px; color:var(--dim)}
+  .dot{width:12px;height:12px;border-radius:50%;background:var(--green);
+       box-shadow:0 0 12px var(--green)}
+  .conn.bad .dot{background:var(--red); box-shadow:0 0 12px var(--red)}
+  .conn.bad{color:var(--red)}
+  .stats{margin-left:auto; display:flex; gap:44px}
+  .stat{text-align:right}
+  .stat .k{font-size:14px; letter-spacing:2px; color:var(--dim); text-transform:uppercase}
+  .stat .v{font-size:64px; line-height:1.02; font-weight:800; font-variant-numeric:tabular-nums}
+  .v.green{color:var(--green)} .v.red{color:var(--red)} .v.indigo{color:var(--indigo)}
+  .flashnum{animation:pop .38s ease}
+  @keyframes pop{0%{transform:scale(1)}45%{transform:scale(1.16)}100%{transform:scale(1)}}
+  .modes{display:flex; gap:8px; padding:8px 28px; background:var(--panel2);
+         border-bottom:1px solid var(--line); font-size:14px; color:var(--dim)}
+  .chip{border:1px solid var(--line); border-radius:999px; padding:3px 12px}
+  .chip b{color:var(--ink); font-weight:600}
+  /* ── Columns ───────────────────────────────────────── */
+  main{flex:1; display:grid; grid-template-columns:1.35fr 1fr 1.1fr; gap:1px;
+       background:var(--line); min-height:0}
+  section{background:var(--panel); display:flex; flex-direction:column; min-height:0}
+  h2{margin:0; padding:14px 22px; font-size:15px; letter-spacing:2.4px;
+     text-transform:uppercase; color:var(--dim); border-bottom:1px solid var(--line)}
+  .scroll{overflow:hidden auto; padding:10px 14px; flex:1}
+  .scroll::-webkit-scrollbar{width:8px}
+  .scroll::-webkit-scrollbar-thumb{background:#243052; border-radius:8px}
+  .empty{color:#5d6b90; padding:26px 10px; font-size:17px}
+  /* ── Feed rows ─────────────────────────────────────── */
+  .row{
+    display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:10px;
+    border-left:4px solid #2b3555; margin-bottom:7px;
+    background:#131a2c; font-variant-numeric:tabular-nums;
+  }
+  .row.new{animation:slidein .3s ease}
+  @keyframes slidein{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+  .row.settled{border-left-color:var(--green); animation:greenflash .4s ease}
+  @keyframes greenflash{0%{background:#12402a}100%{background:#131a2c}}
+  .row.rejected,.row.fraud{border-left-color:var(--red); background:#2a1220}
+  .row.sig{border-left-color:var(--amber); background:#2a2312}
+  .row.confirmed{border-left-color:var(--indigo)}
+  .t{color:var(--dim); font-size:16px; min-width:78px}
+  .who{font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .amt{margin-left:auto; font-weight:800; font-size:22px; white-space:nowrap}
+  .tag{font-size:13px; color:var(--dim); border:1px solid var(--line);
+       border-radius:6px; padding:2px 7px; white-space:nowrap}
+  .verdict{font-size:14px; font-weight:800; letter-spacing:1.4px; min-width:96px; text-align:right}
+  .verdict.ok{color:var(--green)} .verdict.no{color:var(--red)}
+  .verdict.warn{color:var(--amber)} .verdict.info{color:var(--indigo)}
+  /* ── Trust engine ──────────────────────────────────── */
+  .user{margin-bottom:20px}
+  .user .top{display:flex; align-items:baseline; gap:10px; margin-bottom:7px}
+  .user .name{font-size:22px; font-weight:700}
+  .user .lim{margin-left:auto; font-size:26px; font-weight:800; font-variant-numeric:tabular-nums}
+  .bar{height:16px; border-radius:8px; background:#1b2338; overflow:hidden}
+  .bar > i{display:block; height:100%; border-radius:8px;
+           background:linear-gradient(90deg,var(--indigo),var(--green));
+           transition:width .38s ease}
+  .risk{margin-top:6px; font-size:15px; color:var(--dim)}
+  .risk b{color:var(--ink)}
+  .user.bump{animation:pop .38s ease}
+  /* ── Threats ───────────────────────────────────────── */
+  .threat{border:1px solid #4a1626; background:#22101c; border-radius:12px;
+          padding:13px 15px; margin-bottom:10px; animation:pulse .4s ease}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,77,94,.7)}
+                   100%{box-shadow:0 0 0 22px rgba(255,77,94,0)}}
+  .threat .hd{display:flex; align-items:center; gap:9px; font-weight:800;
+              color:var(--red); font-size:17px; letter-spacing:.4px}
+  .threat .hd .t{color:var(--dim)}
+  .threat .dt{margin-top:7px; font-size:17px; line-height:1.42; color:#f2dde2}
+  .ai{margin-top:9px; font-size:13px; letter-spacing:1.6px; color:var(--saffron)}
+</style>
+</head>
+<body>
+<div id="toast"></div>
+
+<header>
+  <div class="brand">Setu<span class="accent">Pay</span> Live</div>
+  <div class="conn" id="conn"><span class="dot"></span><span id="connText">online</span></div>
+  <div class="stats">
+    <div class="stat"><div class="k">₹ Settled</div><div class="v green" id="sSettled">0</div></div>
+    <div class="stat"><div class="k">Blobs</div><div class="v" id="sBlobs">0</div></div>
+    <div class="stat"><div class="k">Attacks Blocked</div><div class="v red" id="sAttacks">0</div></div>
+    <div class="stat"><div class="k">Users</div><div class="v indigo" id="sUsers">0</div></div>
+  </div>
+</header>
+<div class="modes">
+  <span class="chip">signatures <b id="mSig">—</b></span>
+  <span class="chip">explainer <b id="mExp">—</b></span>
+  <span class="chip">demo mode <b id="mDemo">—</b></span>
+</div>
+
+<main>
+  <section>
+    <h2>Live Payments</h2>
+    <div class="scroll" id="feed"><div class="empty">Waiting for the first payment…</div></div>
+  </section>
+  <section>
+    <h2>AI Trust Engine</h2>
+    <div class="scroll" id="trust"><div class="empty">No limits computed yet.</div></div>
+  </section>
+  <section>
+    <h2>Threats Blocked</h2>
+    <div class="scroll" id="threats"><div class="empty">Nothing blocked yet.</div></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var TOKEN  = new URLSearchParams(location.search).get('token') || '';
+  var cursor = 0, fails = 0, MAX_ROWS = 40, MAX_THREATS = 12;
+  var stats  = {settled_total_inr: -1, blobs_synced: -1, attacks_blocked: -1, active_users: -1};
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function inr(n) {
+    return '₹' + Number(n || 0).toLocaleString('en-IN', {maximumFractionDigits: 0});
+  }
+  function hhmmss(ts) {
+    var d = new Date((ts || 0) * 1000);
+    return d.toTimeString().slice(0, 8);
+  }
+  function clearEmpty(el) {
+    var e = el.querySelector('.empty');
+    if (e) e.remove();
+  }
+  function setNum(el, value, text) {
+    if (stats[value.key] === value.n) return;
+    stats[value.key] = value.n;
+    el.textContent = text;
+    el.classList.remove('flashnum');
+    void el.offsetWidth;             // restart the CSS animation
+    el.classList.add('flashnum');
+  }
+
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 4000);
+  }
+
+  // ── Live payments column ──────────────────────────────
+  var VERDICT = {
+    blob_received:         ['RECEIVED',  'info',  ''],
+    settled:               ['SETTLED',   'ok',    'settled'],
+    settlement_confirmed:  ['CONFIRMED', 'info',  'confirmed'],
+    online_payment:        ['ONLINE',    'ok',    'settled'],
+    rejected:              ['BLOCKED',   'no',    'rejected'],
+    signature_invalid:     ['UNSIGNED',  'warn',  'sig']
+    // fraud_flag deliberately absent: it is collapsed per (sender, rule) and
+    // belongs in the THREATS column. Every blob already gets exactly one feed
+    // row via blob_received -> settled / rejected.
+  };
+
+  var rowsByBlob = {};
+
+  function addFeedRow(e) {
+    var spec = VERDICT[e.kind];
+    if (!spec) return;
+    var feed = $('feed');
+    clearEmpty(feed);
+
+    var who = e.receiver && e.receiver !== '\u2014'
+      ? (e.sender || '?') + ' \u2192 ' + e.receiver
+      : (e.sender || '?');
+
+    var tag = '';
+    if (e.handoff_method) {
+      var route = e.handoff_method === 'qr' ? '\uD83D\uDCF7 QR'
+                : e.handoff_method === 'ble' ? '\uD83D\uDCE1 BLE'
+                : e.handoff_method === 'online' ? '\uD83C\uDF10 online' : '\u2601 sync';
+      tag = '<span class="tag">' + (e.offline === false ? '' : '\uD83D\uDCF6 offline\u00B7') +
+            route + '</span>';
+    } else if (e.reason) {
+      tag = '<span class="tag">' + e.reason + '</span>';
+    }
+
+    var html =
+      '<span class="t">' + hhmmss(e.ts) + '</span>' +
+      '<span class="who">' + who + '</span>' +
+      tag +
+      '<span class="amt">' + inr(e.amount) + '</span>' +
+      '<span class="verdict ' + spec[1] + '">' + spec[0] + '</span>';
+
+    // A blob keeps ONE row for its whole life: it lands as RECEIVED and then
+    // flips in place to SETTLED / BLOCKED. Two rows per payment would make the
+    // feed unreadable at the back of a hall.
+    var existing = e.blob_id && rowsByBlob[e.blob_id];
+    if (existing && document.body.contains(existing)) {
+      existing.className = 'row ' + (spec[2] || '');
+      void existing.offsetWidth;
+      existing.innerHTML = html;
+      return;
+    }
+
+    var row = document.createElement('div');
+    row.className = 'row new ' + (spec[2] || '');
+    row.innerHTML = html;
+    if (e.blob_id) rowsByBlob[e.blob_id] = row;
+
+    feed.insertBefore(row, feed.firstChild);
+    while (feed.children.length > MAX_ROWS) {
+      var dropped = feed.lastChild;
+      feed.removeChild(dropped);
+      for (var k in rowsByBlob) {
+        if (rowsByBlob[k] === dropped) delete rowsByBlob[k];
+      }
+    }
+  }
+
+  // ── Threats column ────────────────────────────────────
+  var RULE_LABEL = {
+    replay:     '🚫 Replay attack blocked',
+    signature:  '🚫 Forged payment blocked',
+    over_limit: '🚫 Over-limit payment blocked',
+    velocity:   '🚫 Burst attack blocked',
+    heuristics: '🚫 Fraud pattern blocked'
+  };
+
+  var threatCards = {};
+
+  function addThreat(e) {
+    var box = $('threats');
+    clearEmpty(box);
+    var label = RULE_LABEL[e.rule] || '🚫 Payment blocked';
+    if (e.blocked_count > 1) label += ' ×' + e.blocked_count;
+
+    var card = document.createElement('div');
+    card.className = 'threat';
+    card.innerHTML =
+      '<div class="hd">' + label + '<span class="t" style="margin-left:auto">' +
+        hhmmss(e.ts) + '</span></div>' +
+      '<div class="dt">' + (e.detail || e.reason_detail || '') + '</div>' +
+      '<div class="ai">AI EXPLAINER · ' + (e.sender || 'unknown') +
+        ' · ' + inr(e.amount) + '</div>';
+
+    // Re-poll of a growing burst refreshes the same card instead of stacking.
+    var prior = threatCards[e.id];
+    if (prior && document.body.contains(prior)) {
+      prior.replaceWith(card);
+      threatCards[e.id] = card;
+      return;
+    }
+    threatCards[e.id] = card;
+    box.insertBefore(card, box.firstChild);
+    while (box.children.length > MAX_THREATS) box.removeChild(box.lastChild);
+    toast(label + ' — ' + (e.detail || ''));
+  }
+
+  // ── Trust engine column ───────────────────────────────
+  var MAX_LIMIT = 5000;
+  function renderTrust(limits, bumped) {
+    var box = $('trust');
+    if (!limits || !limits.length) return;
+    clearEmpty(box);
+    box.innerHTML = limits.map(function (u) {
+      var pct = Math.max(2, Math.min(100, (u.limit / MAX_LIMIT) * 100));
+      var risk = (u.risk_score * 100).toFixed(0);
+      return '<div class="user' + (bumped[u.user] ? ' bump' : '') + '">' +
+        '<div class="top"><span class="name">' + u.user + '</span>' +
+        '<span class="lim">' + inr(u.limit) + '</span></div>' +
+        '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="risk">trust score <b>' + (100 - risk) + '/100</b> · ' +
+          'risk ' + (u.risk_score).toFixed(2) + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  // ── Poll loop ─────────────────────────────────────────
+  function connOK(ok) {
+    var c = $('conn');
+    c.classList.toggle('bad', !ok);
+    $('connText').textContent = ok ? 'online' : 'connection lost — retrying';
+  }
+
+  function tick() {
+    fetch('/api/ops/feed?since=' + cursor + '&token=' + encodeURIComponent(TOKEN))
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.status === 403 ? 'bad token' : 'http ' + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        fails = 0; connOK(true);
+        cursor = d.cursor || cursor;
+
+        var bumped = {};
+        (d.events || []).forEach(function (e) {
+          addFeedRow(e);
+          if (e.kind === 'fraud_flag') addThreat(e);
+          if (e.kind === 'limit_changed') bumped[e.user] = true;
+        });
+
+        var s = d.stats || {};
+        setNum($('sSettled'), {key: 'settled_total_inr', n: s.settled_total_inr}, inr(s.settled_total_inr));
+        setNum($('sBlobs'),   {key: 'blobs_synced',      n: s.blobs_synced},      s.blobs_synced || 0);
+        setNum($('sAttacks'), {key: 'attacks_blocked',   n: s.attacks_blocked},   s.attacks_blocked || 0);
+        setNum($('sUsers'),   {key: 'active_users',      n: s.active_users},      s.active_users || 0);
+
+        renderTrust(d.limits, bumped);
+
+        if (d.mode) {
+          $('mSig').textContent  = d.mode.signature_enforcement;
+          $('mExp').textContent  = d.mode.explainer;
+          $('mDemo').textContent = d.mode.demo_mode ? 'on' : 'off';
+        }
+      })
+      .catch(function (err) {
+        fails += 1;
+        if (fails >= 2) connOK(false);
+        if (String(err.message) === 'bad token') {
+          $('connText').textContent = 'invalid dashboard token';
+        }
+      });
+  }
+
+  tick();
+  setInterval(tick, 2000);
+})();
+</script>
+</body>
+</html>
