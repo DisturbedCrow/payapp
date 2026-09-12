@@ -194,7 +194,7 @@ class _PayScreenState extends State<PayScreen> {
     final receiver = QrTransferService.parseReceiveQR(raw);
     setState(() {
       _scannedReceiver = receiver;
-      _error = receiver == null ? 'Invalid QR — ask the recipient to show their Paytm QR.' : null;
+      _error = receiver == null ? 'Invalid QR — ask the recipient to show their receive QR.' : null;
     });
     if (receiver != null) _showAmountDialog(receiver);
   }
@@ -206,7 +206,7 @@ class _PayScreenState extends State<PayScreen> {
 
     final receiver = QrTransferService.parseReceiveQR(raw);
     if (receiver == null) {
-      setState(() => _error = 'Invalid QR — ask the recipient to show their Paytm QR.');
+      setState(() => _error = 'Invalid QR — ask the recipient to show their receive QR.');
       return;
     }
     setState(() => _scannedReceiver = receiver);
