@@ -25,6 +25,14 @@ class DeviceRegistrationService {
   static const String _registeredKey = 'device_registered';
 
   /// Ensure device is registered with backend. Idempotent.
+  ///
+  /// The local `device_registered` flag alone is not enough: the server can
+  /// legitimately forget us (database reseeded between demo rehearsals, the
+  /// binding revoked, or evicted by the 2-device cap). If the phone trusted
+  /// the local flag it would never re-register, and with
+  /// SIGNATURE_ENFORCEMENT=enforce every blob it signs would be rejected as
+  /// `unsigned_device`. So when we are online we confirm with the server and
+  /// re-register if our key is missing.
   Future<bool> ensureRegistered() async {
     try {
       final isGenerated = await _deviceKeys.isKeyGenerated;
@@ -34,12 +42,37 @@ class DeviceRegistrationService {
       }
 
       final alreadyRegistered = await _storage.read(key: _registeredKey);
-      if (alreadyRegistered == 'true') return true;
+      if (alreadyRegistered != 'true') {
+        return await registerDevice();
+      }
 
-      return await registerDevice();
+      // Believed-registered: verify the server agrees. Offline, we keep
+      // trusting the local flag — nothing else we can do, and the blob is
+      // still signed and will verify once the key is known.
+      final serverKnowsUs = await _serverHasOurDevice();
+      if (serverKnowsUs == false) {
+        debugPrint('Device binding missing server-side — re-registering.');
+        await _storage.delete(key: _registeredKey);
+        return await registerDevice();
+      }
+      return true;
     } catch (e) {
       debugPrint('Device registration check failed: $e');
       return false;
+    }
+  }
+
+  /// true / false when we could reach the server, null when offline.
+  Future<bool?> _serverHasOurDevice() async {
+    final deviceId = _deviceKeys.deviceId;
+    if (deviceId == null) return false;
+    try {
+      final response = await _api.get('/api/device/list');
+      final devices = (response['devices'] as List?) ?? const [];
+      return devices.any((d) =>
+          d is Map && d['device_id'] == deviceId && d['is_active'] == true);
+    } catch (_) {
+      return null; // offline or server down — do not churn the binding
     }
   }
 

@@ -56,8 +56,11 @@ DEFAULT_RECEIVER_EMAIL = "ramesh@demo.com"
 class DemoDevice:
     """ECDSA P-256 keypair + the client-side canonical signing routine."""
 
-    def __init__(self, device_id=None):
-        self.device_id = device_id or f"attack-cli-{uuid.uuid4()}"
+    def __init__(self, device_id=None, owner=None):
+        # Stable per-account id. A fresh uuid4 on every would burn one of the
+        # user's 2 device slots on every rehearsal and eventually lock the
+        # real demo phone out of registering.
+        self.device_id = device_id or f"attack-cli-{owner or 'anon'}"
         self.private_key = ec.generate_private_key(ec.SECP256R1())
 
     @property
@@ -338,7 +341,7 @@ def main():
     ctx.attacker_id = attacker["id"]
     ctx.attacker_limit = float(attacker.get("offline_limit") or 100.0)
 
-    ctx.device = DemoDevice()
+    ctx.device = DemoDevice(owner=args.email)
     ctx.client.register_device(ctx.device)
     print(f"  attacker  {attacker['full_name']}  limit ₹{ctx.attacker_limit:,.0f}  "
           f"device registered")
@@ -348,7 +351,7 @@ def main():
     victim = ctx.victim_client.login(*DEFAULT_VICTIM)
     ctx.victim_id = victim["id"]
     ctx.victim_limit = float(victim.get("offline_limit") or 5000.0)
-    ctx.victim_device = DemoDevice()
+    ctx.victim_device = DemoDevice(owner=DEFAULT_VICTIM[0])
     ctx.victim_client.register_device(ctx.victim_device)
 
     receiver_client = Client(args.base_url)

@@ -73,20 +73,37 @@ def register_device(
             "message": "Device binding updated",
         }
 
-    # Enforce max 2 active devices per user
-    active_count = (
+    # Max 2 active devices per user. When the cap is hit we revoke the
+    # least-recently-used binding and bind the new device rather than
+    # refusing — a 409 here on demo day means the phone cannot register its
+    # key and every blob it signs is rejected as `unsigned_device`.
+    # PROD-TODO: in production, refuse and make the user revoke a device
+    # explicitly (silent eviction is a device-takeover vector).
+    active = (
         db.query(DeviceBinding)
         .filter(
             DeviceBinding.user_id == current_user.id,
-            DeviceBinding.is_active == True,
+            DeviceBinding.is_active == True,  # noqa: E712
         )
-        .count()
+        .order_by(DeviceBinding.last_used_at.asc().nullsfirst(),
+                  DeviceBinding.created_at.asc())
+        .all()
     )
-    if active_count >= 2:
-        raise HTTPException(
-            status_code=409,
-            detail="Maximum 2 active devices per user. Revoke an existing device first.",
-        )
+    while len(active) >= 2:
+        evicted = active.pop(0)
+        evicted.is_active = False
+        evicted.revoked_at = datetime.utcnow()
+        db.flush()
+        try:
+            from ..services import ops_events as ops
+            ops.emit(
+                "device_evicted",
+                user=ops.mask_user(current_user.full_name, current_user.id),
+                device=evicted.device_id[:24],
+                reason="device_cap_reached",
+            )
+        except Exception:
+            pass
 
     # Block registration if integrity score is too low
     if integrity_score < 0.3:
