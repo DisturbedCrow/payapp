@@ -8,6 +8,7 @@ import '../models/payment_blob.dart';
 import '../providers/transaction_provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/constants.dart';
+import 'receive_scan_screen.dart';
 import '../config/theme.dart';
 
 /// Universal receive-QR screen.
@@ -215,6 +216,31 @@ class _ShowQRScreenState extends State<ShowQRScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Case 3b: when the sender's phone is also offline, BLE may not
+            // come up. Scanning their signed QR is the path that cannot fail.
+            if (AppConstants.qrHandoffEnabled)
+              SizedBox(
+                height: 52,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ReceiveScanScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Receive by scanning their QR'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primaryColor,
+                    side: const BorderSide(color: AppTheme.primaryColor),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(height: 12),
 
             // Last BLE received

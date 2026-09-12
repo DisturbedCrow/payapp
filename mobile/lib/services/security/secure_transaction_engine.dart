@@ -173,11 +173,7 @@ class SecureTransactionEngine {
 
   /// Build the canonical payload string that gets signed.
   /// This MUST be identical on client and server for signature verification.
-  static String buildCanonicalPayload(PaymentBlob blob) {
-    return '${blob.id}|${blob.senderId}|${blob.receiverId}|'
-        '${blob.amount.toStringAsFixed(2)}|'
-        '${blob.timestamp.toUtc().toIso8601String()}|${blob.nonce}';
-  }
+  static String buildCanonicalPayload(PaymentBlob blob) => canonicalPayload(blob);
 
   // ── Nonce Tracking (Replay Prevention) ────────────────────────
 

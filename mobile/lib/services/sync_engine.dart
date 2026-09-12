@@ -9,8 +9,17 @@ import 'offline_queue_service.dart';
 /// connectivity is restored and processes the server's response:
 ///
 ///   accepted  → mark blob as [BlobStatus.synced]
-///   rejected  → mark blob as [BlobStatus.rejected], restore offline limit
+///   confirmed → the OTHER side of this payment already synced it and the
+///               server has now seen both halves. Settled, not an error:
+///               treat exactly like accepted (Case 3b — sender and receiver
+///               both hold the same blob and both submit it).
+///   duplicate → already processed — settle locally to stop re-submitting
 ///   adjusted  → mark blob as [BlobStatus.synced] at the adjusted amount
+///   rejected  → mark blob as [BlobStatus.rejected], restore offline limit
+///
+/// Limit restoration only applies to blobs this device SENT. A received blob
+/// never deducted anything from this device's offline limit, so restoring on
+/// its rejection would mint limit out of thin air.
 ///
 /// It also clears settled/rejected blobs older than 7 days.
 class SyncEngine {
@@ -99,6 +108,10 @@ class SyncEngine {
         switch (serverStatus) {
           case 'accepted':
           case 'adjusted':
+          // The counterparty synced this same blob first and the server has
+          // now matched both halves. Settled — never an error, never a limit
+          // restore.
+          case 'confirmed':
           case 'duplicate': // already processed — treat as settled to stop re-submitting
             await _queue.updateStatus(id, BlobStatus.synced);
             synced++;
@@ -114,7 +127,12 @@ class SyncEngine {
                 isOffline: true, offlineLimitAtTime: 0,
               ),
             );
-            if (blob.amount > 0) limitToRestore += blob.amount;
+            // Only the SENDER deducted a limit for this blob. A received
+            // blob (Case 3b) cost this device nothing, so there is nothing
+            // to give back.
+            if (blob.amount > 0 && !blob.isReceived) {
+              limitToRestore += blob.amount;
+            }
             break;
         }
       }

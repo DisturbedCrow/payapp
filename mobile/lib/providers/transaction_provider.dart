@@ -62,9 +62,9 @@ class TransactionProvider extends ChangeNotifier {
       _blobTransactions = [];
     }
     _pendingCount = await _storage.getPendingCount() +
-        await _blobQueue.getPendingCount();
+        await _blobQueue.getPendingSentCount();
     _pendingAmount = await _storage.getTotalPending() +
-        await _blobQueue.getPendingTotal();
+        await _blobQueue.getPendingSentTotal();
     notifyListeners();
   }
 
@@ -117,9 +117,9 @@ class TransactionProvider extends ChangeNotifier {
       // Reload local transactions to get updated statuses
       _transactions = await _storage.getAllTransactions();
       _pendingCount = await _storage.getPendingCount() +
-          await _blobQueue.getPendingCount();
+          await _blobQueue.getPendingSentCount();
       _pendingAmount = await _storage.getTotalPending() +
-          await _blobQueue.getPendingTotal();
+          await _blobQueue.getPendingSentTotal();
       _isSyncing = false;
       notifyListeners();
       // Fetch recalculated offline limit from backend after sync

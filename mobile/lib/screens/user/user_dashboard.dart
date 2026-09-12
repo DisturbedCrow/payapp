@@ -4,9 +4,11 @@ import '../../config/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/transaction_provider.dart';
+import '../../widgets/limit_explanation_card.dart';
 import '../../widgets/transaction_tile.dart';
 import '../../config/theme.dart';
 import '../home_screen.dart';
+import '../receive_scan_screen.dart';
 import '../show_qr_screen.dart';
 import 'risk_profile_screen.dart';
 
@@ -18,6 +20,10 @@ class UserDashboard extends StatefulWidget {
 }
 
 class _UserDashboardState extends State<UserDashboard> {
+  // Lets us re-fetch the "Why this limit?" copy after a sync recalculates the
+  // limit, so the card visibly updates on stage.
+  final _explainerKey = GlobalKey<LimitExplanationCardState>();
+
   Future<void> _refresh() async {
     final auth = context.read<AuthProvider>();
     final wallet = context.read<WalletProvider>();
@@ -28,6 +34,9 @@ class _UserDashboardState extends State<UserDashboard> {
       await wallet.requestTokens();
       await txProvider.fetchServerTransactions(isUser: true, userId: auth.user?.id);
     }
+    // Not awaited: the card resolves offline too, and awaiting it would hold
+    // the pull-to-refresh spinner for the whole request timeout on bad Wi-Fi.
+    _explainerKey.currentState?.refresh();
   }
 
   @override
@@ -252,12 +261,20 @@ class _UserDashboardState extends State<UserDashboard> {
                                 label: 'To Self Account',
                                 color: const Color(0xFF7E57C2),
                               ),
+                              // Case 3b receiver: scan a signed blob straight
+                              // off the sender's screen, fully offline.
                               _GridItem(
                                 icon: Icons.download_rounded,
                                 label: 'Receive Money',
                                 color: AppTheme.green,
-                                badge: '⚡Instant',
-                                badgeColor: AppTheme.yellow,
+                                badge: 'Offline',
+                                badgeColor: AppTheme.saffron,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const ReceiveScanScreen(),
+                                  ),
+                                ),
                               ),
                               _GridItem(
                                 icon: Icons.card_giftcard,
@@ -327,6 +344,13 @@ class _UserDashboardState extends State<UserDashboard> {
                               ),
                             ],
                           ),
+
+                          // ── "Why this limit?" — the AI made visible ──
+                          // Hides itself entirely when offline with no cache,
+                          // so it can never become a spinner that won't resolve.
+                          const SizedBox(height: 12),
+                          LimitExplanationCard(key: _explainerKey),
+
                           const SizedBox(height: 16),
 
                           // My SetuPay items grid

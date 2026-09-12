@@ -27,6 +27,7 @@ class OfflineStorage {
         AppConstants.dbName,
         version: AppConstants.dbVersion,
         onCreate: _createTables,
+        onUpgrade: _onUpgrade,
       );
     }
     
@@ -80,6 +81,7 @@ class OfflineStorage {
     ''');
 
     // Payment blobs table (v2) — offline payment captures pending sync
+    // v5 added handoff_method / direction / sender_public_key.
     await db.execute('''
       CREATE TABLE IF NOT EXISTS payment_blobs (
         id TEXT PRIMARY KEY,
@@ -91,7 +93,10 @@ class OfflineStorage {
         device_signature TEXT NOT NULL,
         status TEXT DEFAULT 'pending_sync',
         is_offline INTEGER DEFAULT 1,
-        offline_limit_at_time REAL NOT NULL DEFAULT 0
+        offline_limit_at_time REAL NOT NULL DEFAULT 0,
+        handoff_method TEXT,
+        direction TEXT DEFAULT 'sent',
+        sender_public_key TEXT
       )
     ''');
 
@@ -179,6 +184,37 @@ class OfflineStorage {
           last_verified TEXT
         )
       ''');
+    }
+    if (oldVersion < 5) {
+      // v4 → v5: QR handoff (Case 3b) — route, side of the payment, and the
+      // sending device's public key so a received blob can be re-verified
+      // and forwarded to the backend at sync time.
+      //
+      // Each ALTER is guarded: SQLite has no ADD COLUMN IF NOT EXISTS, and a
+      // partially-upgraded install (or a fresh _createTables that already
+      // includes the column) must not brick the database on startup.
+      await _addColumnIfMissing(
+          db, 'payment_blobs', 'handoff_method', 'TEXT');
+      await _addColumnIfMissing(
+          db, 'payment_blobs', 'direction', "TEXT DEFAULT 'sent'");
+      await _addColumnIfMissing(
+          db, 'payment_blobs', 'sender_public_key', 'TEXT');
+    }
+  }
+
+  /// `ALTER TABLE ... ADD COLUMN`, tolerating "duplicate column name".
+  Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    try {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    } catch (e) {
+      // Already present (or the table does not exist yet, in which case
+      // _createTables owns it). Never fail the migration over this.
+      debugPrint('Migration: skipped $table.$column — $e');
     }
   }
 
