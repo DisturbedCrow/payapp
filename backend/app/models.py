@@ -92,6 +92,13 @@ class Transaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     synced_at = Column(DateTime, nullable=True)
     settled_at = Column(DateTime, nullable=True)
+    # Which account uploaded the copy that settled. Lets the sync route tell a
+    # replay (same uploader again) from the honest Case 3 race (the other
+    # party's copy arriving later). Added 2026-09-12; see scripts/add_columns.py.
+    synced_by = Column(String, nullable=True)
+    # Comma-joined ids of counterparties whose duplicate copy was answered
+    # with "confirmed". A second resend from the same id is a replay.
+    confirmed_by = Column(String, nullable=True)
 
     sender = relationship("User", foreign_keys=[sender_id], back_populates="sent_transactions")
     receiver = relationship("User", foreign_keys=[receiver_id], back_populates="received_transactions")

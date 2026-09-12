@@ -27,6 +27,7 @@ from app.models import (
     UserRole,
 )
 from app.auth import hash_password
+from app.services.demo_ids import demo_user_id
 from app.services.risk_engine import compute_offline_limit, compute_risk_score
 
 
@@ -93,6 +94,7 @@ def seed_database(force: bool = False):
         now = datetime.utcnow()
         demo_day = [
             User(
+                id=demo_user_id("vivek@demo.com"),
                 email="vivek@demo.com",
                 password_hash=hash_password("password123"),
                 full_name="Vivek Sharma",
@@ -107,6 +109,7 @@ def seed_database(force: bool = False):
                 created_at=now - timedelta(days=420),
             ),
             User(
+                id=demo_user_id("attacker@demo.com"),
                 email="attacker@demo.com",
                 password_hash=hash_password("password123"),
                 full_name="Anon Attacker",
@@ -125,6 +128,7 @@ def seed_database(force: bool = False):
         # Demo Merchants
         merchants = [
             User(
+                id=demo_user_id("ramesh@demo.com"),
                 email="ramesh@demo.com",
                 password_hash=hash_password("password123"),
                 full_name="Ramesh Kirana",

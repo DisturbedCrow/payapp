@@ -27,6 +27,7 @@ from cryptography.hazmat.primitives.asymmetric.ec import (
 from cryptography.exceptions import InvalidSignature
 from sqlalchemy.orm import Session
 
+from ..config import SIGNATURE_ENFORCEMENT
 from ..models import DeviceBinding, NonceRegistry, User
 from .signing import canonical_payload
 
@@ -99,8 +100,11 @@ def verify_blob_signature(
     public_key = None
     if device_binding:
         public_key = decode_public_key_from_base64(device_binding.public_key_base64)
-    elif sender_public_key_b64:
-        # First-time: key not yet registered. Accept but flag for registration.
+    elif sender_public_key_b64 and SIGNATURE_ENFORCEMENT != "enforce":
+        # First-time: key not yet registered. In log_only we verify against the
+        # key the blob carries so an unregistered phone can still pay; in
+        # enforce that would let anyone mint a key and sign as any sender, so
+        # it is refused as unsigned_device.
         public_key = decode_public_key_from_base64(sender_public_key_b64)
 
     if public_key is None:

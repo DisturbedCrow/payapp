@@ -12,6 +12,7 @@ from .routes import (
     device_routes,
     explain_routes,
     ops_routes,
+    contact_routes,
 )
 from .auth import get_current_user
 from .models import User
@@ -40,6 +41,7 @@ app.include_router(dashboard.router)
 app.include_router(device_routes.router)
 app.include_router(explain_routes.router)
 app.include_router(ops_routes.router)
+app.include_router(contact_routes.router)
 
 
 @app.on_event("startup")
@@ -47,6 +49,14 @@ def startup_event():
     """Initialize database and train ML model on startup."""
     init_db()
     print("Database initialized.")
+
+    # create_all() never adds columns to existing tables; apply the guarded
+    # ALTERs for columns added after the first deploy.
+    try:
+        from scripts.add_columns import ensure_columns
+        ensure_columns(verbose=False)
+    except Exception as exc:
+        print(f"Warning: column migration skipped: {exc}")
 
     # Seed the ops dashboard's Trust Engine panel from the database so the
     # projector shows real limit bars before the first payment of the demo.
@@ -302,14 +312,27 @@ def sync_offline_blobs(
         # ── 2. Replay ───────────────────────────────────────────
         existing = db.query(Transaction).filter(Transaction.nonce == nonce).first()
         if existing:
-            # Case 3b: the receiver uploads their copy of a blob the sender
-            # already settled. That is the dedup working as designed, not an
-            # attack — tell the receiver's phone "confirmed", not "duplicate".
-            is_counterparty_copy = (
-                current_user.id == receiver_id and current_user.id != sender_id
-            ) or (existing.receiver_id and current_user.id == existing.receiver_id
-                  and current_user.id != existing.sender_id)
-            if is_counterparty_copy:
+            # Three different things arrive as "a nonce we already settled":
+            #   - the SAME account uploading it again        -> replay attack
+            #   - the OTHER participant's copy (Case 3 race,
+            #     e.g. receiver synced first via QR/BLE)      -> confirmed
+            #   - anyone else                                 -> duplicate
+            # Older rows (before synced_by existed) fall back to the
+            # participant test.
+            uploader = getattr(existing, "synced_by", None)
+            is_participant = current_user.id in (existing.sender_id, existing.receiver_id)
+            if uploader:
+                is_counterparty_copy = is_participant and current_user.id != uploader
+            else:
+                is_counterparty_copy = is_participant and current_user.id != existing.sender_id
+            # A participant gets "confirmed" exactly once. After that we
+            # stamp them as a second uploader so a further resend is a
+            # replay, no matter which side it comes from.
+            already_confirmed = bool(getattr(existing, "confirmed_by", None)) and \
+                current_user.id in (existing.confirmed_by or "").split(",")
+            if is_counterparty_copy and not already_confirmed:
+                prior = existing.confirmed_by or ""
+                existing.confirmed_by = f"{prior},{current_user.id}".strip(",")
                 settled_at = existing.settled_at or existing.created_at
                 results.append({
                     "id": blob_id,
@@ -438,6 +461,7 @@ def sync_offline_blobs(
             status=TransactionStatus.SETTLED,
             synced_at=datetime.utcnow(),
             settled_at=datetime.utcnow(),
+            synced_by=current_user.id,
         )
         db.add(tx)
         db.flush()
