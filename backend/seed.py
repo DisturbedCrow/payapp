@@ -6,8 +6,10 @@ Run: python seed.py           (skips if any user exists)
 The three demo-day accounts are deliberately spread across the risk model so
 the dashboard's Trust Engine panel shows visibly different bars on stage:
 
-  vivek     KYC 3, 214 historical txns, 0 fraud flags   -> top limit tier
-  ramesh    merchant receiver
+  ashmita   KYC 3, 214 historical txns, 0 fraud flags   -> top limit tier  (STAGE SENDER)
+  jyati     merchant receiver                                          (STAGE RECEIVER)
+  vivek     same profile as ashmita, kept for older scripts
+  ramesh    merchant receiver, kept for older scripts
   attacker  KYC 0, brand new account, 1 prior fraud flag -> floor limit tier
 """
 import sys
@@ -93,6 +95,22 @@ def seed_database(force: bool = False):
         # These three drive the stage script and the attack demo.
         now = datetime.utcnow()
         demo_day = [
+            # ── The pair used on stage ──────────────────────────
+            User(
+                id=demo_user_id("ashmita@gmail.com"),
+                email="ashmita@gmail.com",
+                password_hash=hash_password("password123"),
+                full_name="Ashmita Rao",
+                phone="+919000000011",
+                role=UserRole.USER,
+                kyc_tier=3,
+                device_trust_score=0.95,
+                balance=12000.0,
+                transaction_count=214,
+                avg_transaction_amount=340.0,
+                fraud_flags=0,
+                created_at=now - timedelta(days=420),
+            ),
             User(
                 id=demo_user_id("vivek@demo.com"),
                 email="vivek@demo.com",
@@ -127,6 +145,21 @@ def seed_database(force: bool = False):
 
         # Demo Merchants
         merchants = [
+            # Stage receiver.
+            User(
+                id=demo_user_id("jyati@gmail.com"),
+                email="jyati@gmail.com",
+                password_hash=hash_password("password123"),
+                full_name="Jyati Kirana",
+                phone="+919000000012",
+                role=UserRole.MERCHANT,
+                kyc_tier=3,
+                device_trust_score=0.92,
+                balance=0.0,
+                transaction_count=180,
+                avg_transaction_amount=290.0,
+                created_at=now - timedelta(days=380),
+            ),
             User(
                 id=demo_user_id("ramesh@demo.com"),
                 email="ramesh@demo.com",
@@ -205,7 +238,8 @@ def seed_database(force: bool = False):
             print(f"    {u.email:<24} limit ₹{u.offline_limit:>7,.0f}  "
                   f"kyc {u.kyc_tier}  flags {u.fraud_flags}  txns {u.transaction_count}")
         print("  Merchants:")
-        print("    ramesh@demo.com / password123  (stage receiver)")
+        print("    jyati@gmail.com / password123  (STAGE RECEIVER)")
+        print("    ramesh@demo.com / password123")
         print("    shopkeeper@demo.com / password123")
         print("    chai@demo.com / password123")
         print("    pharmacy@demo.com / password123")
