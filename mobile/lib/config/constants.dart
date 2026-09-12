@@ -50,6 +50,28 @@ class AppConstants {
   // are the deterministic uuid5 values backend/seed.py assigns to the
   // demo-day cast (see backend/app/services/demo_ids.py).
   static const Map<String, DemoContact> demoContacts = {
+    // ── Stage pair ──────────────────────────────────────────
+    // Aliases cover what the hi_IN recogniser actually returns: Devanagari
+    // first, then Roman. "Jyati" is close enough to the far more common
+    // "Jyoti" that Google will often transcribe it that way — both spellings
+    // are listed so the payee still resolves, and the fuzzy matcher
+    // (Levenshtein <= 2) catches the rest.
+    'jyati': DemoContact(
+      id: '8061253a-e03b-538b-a8b5-75194294fec1',
+      name: 'Jyati Kirana',
+      // Deliberately NOT the bare surname 'kirana' — Ramesh Kirana shares it,
+      // and an exact hit on a shared surname outranked his full name, so
+      // "ramesh kirana" resolved to Jyati. Aliases must be distinguishing.
+      aliases: [
+        'jyati', 'jyati kirana', 'jyoti', 'jyoti kirana',
+        'ज्याति', 'ज्योति', 'जयति', 'ज्याती',
+      ],
+    ),
+    'ashmita': DemoContact(
+      id: 'a7996138-97cf-5b93-a039-eb2ed11e7f3c',
+      name: 'Ashmita Rao',
+      aliases: ['ashmita', 'ashmita rao', 'asmita', 'अश्मिता', 'अस्मिता'],
+    ),
     'ramesh': DemoContact(
       id: 'f30ca7a5-cc00-5efb-a792-e136e834a7aa',
       name: 'Ramesh Kirana',

@@ -49,6 +49,34 @@ void main() {
       expect(r.payee, 'Ramesh Kirana');
     });
 
+    // ── The stage pair: "Jyati ko do sau rupaye bhejo" ──────────────
+    const jyatiCases = <String, double>{
+      'ज्याति को दो सौ रुपये भेजो': 200,
+      'ज्योति को दो सौ रुपये भेजो': 200,   // what hi_IN usually returns
+      'jyati ko do sau rupaye bhejo': 200,
+      'jyoti ko do sau rupaye bhejo': 200,
+      'jyati ko ढाई सौ भेज दो': 250,
+      'send 200 rupees to jyati': 200,
+    };
+    jyatiCases.forEach((transcript, expected) {
+      test('"$transcript" -> Rs $expected to Jyati', () {
+        final r = run(transcript);
+        expect(r.amount, expected, reason: transcript);
+        expect(r.payee, 'Jyati Kirana', reason: transcript);
+      });
+    });
+
+    test('a one-letter mishearing still resolves via Levenshtein', () {
+      expect(run('jyathi ko do sau bhejo').payee, 'Jyati Kirana');
+    });
+
+    test('a shared surname does not steal the other contact', () {
+      // Jyati Kirana and Ramesh Kirana share a surname. Aliases must stay
+      // distinguishing, or a full name resolves to the wrong payee.
+      expect(run('ramesh kirana ko do sau bhejo').payee, 'Ramesh Kirana');
+      expect(run('jyati kirana ko do sau bhejo').payee, 'Jyati Kirana');
+    });
+
     test('an unrelated utterance yields nothing and does not throw', () {
       final r = run('नमस्ते कैसे हो');
       expect(r.amount, isNull);

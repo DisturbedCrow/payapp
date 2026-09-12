@@ -8,6 +8,8 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -30,9 +32,17 @@ class VoiceService {
   String? _activeLocaleId;
   String? _lastError;
 
+  /// Whether the current attempt ever produced words, and the error it hit.
+  /// Together these separate "the engine cannot do this" from "nobody spoke".
+  bool _sawPartial = false;
+  String? _attemptError;
+
   StreamController<String>? _partialsController;
   Completer<String?>? _session;
   Timer? _hardStop;
+
+  /// Fires [AppConstants.voicePauseFor] after the last word was heard.
+  Timer? _silence;
   String _lastTranscript = '';
 
   // ── Public surface ──────────────────────────────────────────────────────
@@ -103,7 +113,35 @@ class VoiceService {
     }
   }
 
+  /// One listen configuration. Google exposes several recognisers and not all
+  /// of them can serve every locale, so we describe each attempt explicitly
+  /// rather than assuming one works.
+  static const List<_ListenAttempt> _ladder = [
+    // Best: fully offline Hindi. Needs the on-device Hindi pack.
+    _ListenAttempt(onDevice: true, preferHindi: true, label: 'offline hi-IN'),
+    // Hindi via the network recogniser — works today, not in airplane mode.
+    _ListenAttempt(onDevice: false, preferHindi: true, label: 'online hi-IN'),
+    // Last resort: whatever locale the device defaults to. Hinglish speakers
+    // are usually intelligible to en-IN and the parser reads Roman too.
+    _ListenAttempt(onDevice: false, preferHindi: false, label: 'device default'),
+  ];
+
+  /// The ladder rung that last produced a transcript. Tried first next time so
+  /// the demo does not pay the failed-attempt latency twice.
+  int _preferredRung = 0;
+
+  /// Human-readable description of the rung currently in use.
+  String? get activeMode => _activeMode;
+  String? _activeMode;
+
   /// Runs one listen session and resolves with the final transcript.
+  ///
+  /// Walks [_ladder] until something works. The reason this exists: forcing
+  /// `onDevice: true` when the on-device Hindi model is not installed makes
+  /// Google's recogniser throw within ~200 ms — the mic opens and shuts
+  /// instantly and the sheet looks broken. Rather than guess what a given
+  /// handset has installed, we try the best option and fall back on a
+  /// fast failure.
   ///
   /// Returns null when nothing was heard, the session was cancelled, or the
   /// plugin is unavailable. Auto-stops after [AppConstants.voicePauseFor] of
@@ -116,21 +154,111 @@ class VoiceService {
       if (!ok) return null;
     }
 
+    // Start at the rung that worked last time, then wrap around.
+    final order = <int>[
+      _preferredRung,
+      for (var i = 0; i < _ladder.length; i++)
+        if (i != _preferredRung) i,
+    ];
+
+    for (var i = 0; i < order.length; i++) {
+      final rung = order[i];
+      final attempt = _ladder[rung];
+
+      // After a refusal the platform recogniser is left in a state where the
+      // next listen() returns error_language_unavailable in ~5 ms without ever
+      // opening the mic. Re-initialising clears it, so each rung gets a fair
+      // attempt rather than inheriting the previous one's failure.
+      if (i > 0) {
+        await _reinitialise();
+      }
+
+      final outcome = await _attemptListen(attempt, maxListen);
+
+      if (outcome.transcript != null) {
+        _preferredRung = rung;
+        _activeMode = attempt.label;
+        return outcome.transcript;
+      }
+
+      // The engine refused this configuration (wrong locale, no offline
+      // model). Drop to the next rung immediately.
+      if (outcome.failedFast) continue;
+
+      // The engine worked and the user simply said nothing. Retrying a
+      // different recogniser would not help and would double the wait.
+      _activeMode = attempt.label;
+      return null;
+    }
+
+    return null;
+  }
+
+  /// Arms (or re-arms) the end-of-speech pause. Called on every partial, so
+  /// the countdown restarts while the user is still talking and only fires
+  /// once they have genuinely stopped.
+  void _armSilenceTimer(void Function(String?) finish) {
+    _silence?.cancel();
+    _silence = Timer(AppConstants.voicePauseFor, () async {
+      try {
+        await _speech.stop();
+      } catch (_) {/* ignore */}
+      finish(_lastTranscript);
+    });
+  }
+
+  /// Tears the plugin down and brings it back up, clearing any latched error
+  /// state from a refused configuration.
+  Future<void> _reinitialise() async {
+    try {
+      await _speech.cancel();
+    } catch (_) {/* ignore */}
+    try {
+      await _speech.stop();
+    } catch (_) {/* ignore */}
+    _initialised = false;
+    _available = false;
+    _attemptError = null;
+    // Give the platform service a moment to release the session.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    try {
+      _available = await _speech.initialize(
+        onError: _onError,
+        onStatus: _onStatus,
+        debugLogging: false,
+      );
+      _initialised = _available;
+    } catch (_) {
+      _available = false;
+    }
+  }
+
+  /// Runs exactly one configuration. Never throws.
+  Future<_ListenOutcome> _attemptListen(
+    _ListenAttempt attempt,
+    Duration maxListen,
+  ) async {
     // Only one session at a time.
     if (_session != null && !_session!.isCompleted) {
       await stop();
     }
 
+    final localeId = attempt.preferHindi ? _activeLocaleId : null;
     final completer = Completer<String?>();
     _session = completer;
     _lastTranscript = '';
     _listening = true;
+    _sawPartial = false;
+    _attemptError = null;
+    final startedAt = DateTime.now();
 
     void finish(String? value) {
       if (completer.isCompleted) return;
       _listening = false;
       _hardStop?.cancel();
       _hardStop = null;
+      _silence?.cancel();
+      _silence = null;
       final trimmed = value?.trim();
       completer.complete(
         (trimmed == null || trimmed.isEmpty) ? null : trimmed,
@@ -143,32 +271,42 @@ class VoiceService {
       await _speech.listen(
         onResult: (SpeechRecognitionResult r) {
           _lastTranscript = r.recognizedWords;
+          if (r.recognizedWords.isNotEmpty) {
+            _sawPartial = true;
+            _armSilenceTimer(finish);
+          }
           _emitPartial(r.recognizedWords);
           if (r.finalResult) finish(r.recognizedWords);
         },
         listenOptions: SpeechListenOptions(
-          // EXTRA_PREFER_OFFLINE on Android: a preference, not a hard fail, so
-          // it is safe to always set and it is what makes the demo airplane-
-          // mode-proof once the Hindi pack is downloaded.
-          onDevice: true,
+          // On Android this is EXTRA_PREFER_OFFLINE. Only the first rung sets
+          // it — see the ladder comment above for why forcing it is unsafe.
+          onDevice: attempt.onDevice,
           partialResults: true,
-          cancelOnError: true,
+          // Deliberately false: an error must not tear the session down before
+          // we can decide whether to retry on the next rung.
+          cancelOnError: false,
           listenMode: ListenMode.dictation,
-          pauseFor: AppConstants.voicePauseFor,
+          // NOT AppConstants.voicePauseFor. The plugin starts counting
+          // `pauseFor` the instant listening begins, so a 1.2 s value ends the
+          // session 1.2 s after the sheet opens unless the user is already
+          // mid-word — which is what made the mic look like it "opens and
+          // closes instantly". We give the platform a generous ceiling and
+          // enforce the real 1.2 s end-of-speech pause ourselves, armed only
+          // once words have actually arrived (see _armSilenceTimer).
+          pauseFor: maxListen,
           listenFor: maxListen,
-          localeId: _activeLocaleId,
+          localeId: localeId,
         ),
       );
     } catch (e) {
       _lastError = 'Could not start listening';
-      finish(null);
       _onFinal = null;
-      return completer.future;
+      return const _ListenOutcome(transcript: null, failedFast: true);
     }
 
     // Safety net: some Android recognisers neither deliver a final result nor
-    // a terminal status. Fall back to the newest partial. Only armed if the
-    // session is still open — an immediate onError may already have closed it.
+    // a terminal status. Fall back to the newest partial.
     _hardStop?.cancel();
     _hardStop = null;
     if (!completer.isCompleted) {
@@ -182,7 +320,29 @@ class VoiceService {
 
     final result = await completer.future;
     _onFinal = null;
-    return result;
+
+    // "Failed fast" means the engine rejected this configuration rather than
+    // listening and hearing silence.
+    //
+    // Deliberately NOT conditioned on an error callback: Google's on-device
+    // recogniser, asked for a locale whose model is not installed, simply
+    // reports `done` ~200 ms after start with no error and no words. The
+    // reliable signal is the timing — the listen window is 8 s, and a human
+    // cannot deliver an utterance in under a second, so a session that
+    // produced nothing and ended almost immediately did not hear silence, it
+    // declined to listen.
+    final elapsed = DateTime.now().difference(startedAt);
+    final failedFast = result == null &&
+        !_sawPartial &&
+        elapsed < const Duration(milliseconds: 800);
+
+    debugPrint('VoiceService: rung "${attempt.label}" ended after '
+        '${elapsed.inMilliseconds}ms — '
+        'transcript=${result == null ? "none" : "yes"} '
+        'partials=$_sawPartial err=${_attemptError ?? "none"} '
+        '${failedFast ? "=> REFUSED, trying next rung" : "=> accepted as final"}');
+
+    return _ListenOutcome(transcript: result, failedFast: failedFast);
   }
 
   /// Ends the current listen session early (user tapped stop / dismissed the
@@ -190,6 +350,8 @@ class VoiceService {
   Future<void> stop() async {
     _hardStop?.cancel();
     _hardStop = null;
+    _silence?.cancel();
+    _silence = null;
     _listening = false;
     try {
       if (_speech.isListening) await _speech.stop();
@@ -202,6 +364,8 @@ class VoiceService {
   Future<void> cancel() async {
     _hardStop?.cancel();
     _hardStop = null;
+    _silence?.cancel();
+    _silence = null;
     _listening = false;
     _lastTranscript = '';
     try {
@@ -217,6 +381,8 @@ class VoiceService {
   void dispose() {
     _hardStop?.cancel();
     _hardStop = null;
+    _silence?.cancel();
+    _silence = null;
     _listening = false;
     try {
       if (_speech.isListening) _speech.cancel();
@@ -307,6 +473,9 @@ class VoiceService {
   Future<String?> _pickLocale() async {
     try {
       final locales = await _speech.locales();
+      debugPrint('VoiceService: ${locales.length} locales available; '
+          'indic=${locales.where((l) => RegExp(r"^(hi|bn|ta|te|mr|gu|kn|ml|pa|ur)").hasMatch(l.localeId.toLowerCase())).map((l) => l.localeId).join(",")}; '
+          'en=${locales.where((l) => l.localeId.toLowerCase().startsWith("en")).map((l) => l.localeId).take(6).join(",")}');
       String? match(bool Function(String id) test) {
         for (final l in locales) {
           if (test(l.localeId.replaceAll('-', '_'))) return l.localeId;
@@ -330,10 +499,13 @@ class VoiceService {
 
   void _onError(SpeechRecognitionError error) {
     _lastError = error.errorMsg;
-    if (error.permanent) {
-      final f = _onFinal;
-      if (f != null) f(_lastTranscript);
-    }
+    _attemptError = error.errorMsg;
+    // Close the session so the ladder can move on. Whether the error is
+    // "permanent" is not the useful question — an unusable configuration
+    // reports error_language_unavailable / error_client, and we want to try
+    // the next rung either way.
+    final f = _onFinal;
+    if (f != null) f(_lastTranscript);
   }
 
   void _onStatus(String status) {
@@ -356,4 +528,24 @@ class VoiceService {
       if (f != null) f(_lastTranscript);
     }
   }
+}
+
+/// One rung of the recogniser fallback ladder.
+class _ListenAttempt {
+  final bool onDevice;
+  final bool preferHindi;
+  final String label;
+  const _ListenAttempt({
+    required this.onDevice,
+    required this.preferHindi,
+    required this.label,
+  });
+}
+
+class _ListenOutcome {
+  final String? transcript;
+
+  /// True when the engine refused the configuration rather than listening.
+  final bool failedFast;
+  const _ListenOutcome({required this.transcript, required this.failedFast});
 }

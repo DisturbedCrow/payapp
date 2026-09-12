@@ -47,8 +47,8 @@ GREEN, RED, YELLOW, DIM, BOLD, RESET = (
 BLOB_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".sent_blobs.json")
 
 DEFAULT_ATTACKER = ("attacker@demo.com", "password123")
-DEFAULT_VICTIM = ("vivek@demo.com", "password123")
-DEFAULT_RECEIVER_EMAIL = "ramesh@demo.com"
+DEFAULT_VICTIM = ("ashmita@gmail.com", "password123")
+DEFAULT_RECEIVER_EMAIL = "jyati@gmail.com"
 
 
 # ── Device key: the same shape the Flutter DeviceKeyService produces ──

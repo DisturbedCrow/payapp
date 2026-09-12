@@ -38,6 +38,23 @@ class _VoicePaySheet extends StatefulWidget {
 
 class _VoicePaySheetState extends State<_VoicePaySheet>
     with SingleTickerProviderStateMixin {
+
+  /// What to tell the user when nothing was transcribed. Includes which
+  /// recogniser configuration was actually used — without this, "it just
+  /// closes" is indistinguishable from "you said nothing", which is exactly
+  /// the confusion that cost us an evening.
+  String _diagnostic() {
+    final mode = VoiceService().activeMode;
+    final err = VoiceService().lastError;
+    const base = 'Try again — say something like '
+        '“Jyati ko do sau rupaye bhejo”.';
+    if (err != null && err.isNotEmpty) {
+      return '$base\n\n(recogniser: ${mode ?? 'unknown'} · $err)';
+    }
+    if (mode != null) return '$base\n\n(recogniser: $mode)';
+    return base;
+  }
+
   final VoiceService _voice = VoiceService();
 
   late final AnimationController _pulse;
@@ -194,7 +211,7 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
         constraints: const BoxConstraints(minHeight: 92),
         child: Center(
           child: Text(
-            _partial.isEmpty ? '“Ramesh ko do sau rupaye bhejo”' : _partial,
+            _partial.isEmpty ? '“Jyati ko do sau rupaye bhejo”' : _partial,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: _partial.isEmpty ? 16 : 26,
@@ -352,7 +369,7 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
         ),
         const SizedBox(height: 8),
         Text(
-          'Try again — say something like “Ramesh ko do sau rupaye bhejo”.',
+          _diagnostic(),
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
         ),
