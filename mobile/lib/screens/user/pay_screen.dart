@@ -916,10 +916,17 @@ class _PayScreenState extends State<PayScreen> {
                       child: ElevatedButton.icon(
                         onPressed: _isProcessing ? null : startVoicePay,
                         icon: const Icon(Icons.mic, size: 22),
-                        label: const Text(
-                          'बोलकर भेजें  •  Pay by Voice',
-                          style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w700),
+                        // FittedBox: the Devanagari + English label is wider
+                        // than a 1080p phone at 15sp and was being clipped
+                        // mid-word ("Pay by").
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'बोलकर भेजें  •  Pay by Voice',
+                            maxLines: 1,
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w700),
+                          ),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.saffron,

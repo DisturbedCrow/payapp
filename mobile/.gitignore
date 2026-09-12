@@ -74,3 +74,8 @@ Thumbs.db
 
 # Kotlin compiler session files
 **/android/.kotlin/
+
+# Built demo APK — regenerate with scripts/build_release.sh
+SetuPay-demo-day.apk
+*.apk
+*.ipa

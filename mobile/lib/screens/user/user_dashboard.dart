@@ -581,9 +581,13 @@ class _UserDashboardState extends State<UserDashboard> {
                 backgroundColor: AppTheme.saffron,
                 foregroundColor: Colors.white,
                 icon: const Icon(Icons.mic),
-                label: const Text(
-                  'बोलकर भेजें • Pay by Voice',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                label: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'बोलकर भेजें • Pay by Voice',
+                    maxLines: 1,
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
                 ),
                 onPressed: () {
                   // Hand off to the Pay tab, which owns the payment machinery,
