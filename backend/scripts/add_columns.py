@@ -26,6 +26,7 @@ from app.database import engine  # noqa: E402
 COLUMNS = [
     ("transactions", "synced_by", "VARCHAR"),
     ("transactions", "confirmed_by", "VARCHAR"),
+    ("users", "device_public_key_b64", "VARCHAR"),
 ]
 
 

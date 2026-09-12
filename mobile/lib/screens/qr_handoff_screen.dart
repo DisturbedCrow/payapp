@@ -22,12 +22,14 @@ class QrHandoffScreen extends StatelessWidget {
   final PaymentBlob blob;
   final String signature;
   final String senderPublicKey;
+  final String alg;
 
   const QrHandoffScreen({
     super.key,
     required this.blob,
     required this.signature,
     required this.senderPublicKey,
+    this.alg = SignatureAlg.ecdsaP256,
   });
 
   @override
@@ -36,6 +38,7 @@ class QrHandoffScreen extends StatelessWidget {
       blob: blob,
       signature: signature,
       senderPublicKey: senderPublicKey,
+      alg: alg,
     );
 
     final media = MediaQuery.of(context);

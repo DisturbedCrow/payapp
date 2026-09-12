@@ -31,8 +31,10 @@ dependencies:
   convert: ^3.1.1
   crypto: ^3.0.3
   # ── Demo-day additions (Sept 13) ──
+  cryptography: ^2.7.0          # Feature B: Ed25519 device signing
   speech_to_text: ^7.4.0        # Feature G: on-device Hindi STT (hi_IN)
   permission_handler: ^12.0.0   # mic / camera rationale prompts
+  flutter_tts: ^4.2.5           # G3.5: offline Hindi confirmation readback
 
 dev_dependencies:
   flutter_test:

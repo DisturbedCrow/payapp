@@ -12,6 +12,7 @@
 import 'package:flutter/material.dart';
 
 import '../../config/theme.dart';
+import '../../services/voice_readback_service.dart';
 import '../../services/voice_intent_parser.dart';
 
 String formatRupees(double amount) {
@@ -68,6 +69,24 @@ class _VoiceConfirmScreenState extends State<VoiceConfirmScreen> {
   void initState() {
     super.initState();
     if (widget.matches.length == 1) _selected = widget.matches.first;
+    _speakConfirmation();
+  }
+
+  /// Read the payment back in Hinglish so the user can confirm without
+  /// reading the screen — the point of a voice flow. Fire-and-forget and
+  /// silent when TTS or the Hindi voice is unavailable; it must never delay
+  /// or block the confirm screen.
+  void _speakConfirmation() {
+    final amount = _amount;
+    final payee = _selected?.name;
+    if (amount == null || amount <= 0 || payee == null) return;
+    VoiceReadbackService().speakConfirmation(amount: amount, payeeName: payee);
+  }
+
+  @override
+  void dispose() {
+    VoiceReadbackService().stop();
+    super.dispose();
   }
 
   void _confirm() {

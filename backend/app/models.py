@@ -41,6 +41,10 @@ class User(Base):
     role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)
     kyc_tier = Column(Integer, default=1)  # 0-3
     device_trust_score = Column(Float, default=0.5)  # 0.0-1.0
+    # Base64 raw Ed25519 public key registered by the device (Feature B).
+    # Distinct from the DeviceBinding table, which holds the older ECDSA
+    # P-256 bindings; a user has at most one Ed25519 signing key.
+    device_public_key_b64 = Column(String, nullable=True)
     balance = Column(Float, default=10000.0)  # Starting balance for hackathon demo
     offline_limit = Column(Float, default=0.0)
     offline_limit_used = Column(Float, default=0.0)

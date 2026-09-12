@@ -63,6 +63,8 @@ class OfflineStorage {
     ['payment_blobs', 'handoff_method', 'TEXT'],
     ['payment_blobs', 'direction', "TEXT DEFAULT 'sent'"],
     ['payment_blobs', 'sender_public_key', 'TEXT'],
+    ['payment_blobs', 'device_signature_ed25519', 'TEXT'],
+    ['payment_blobs', 'sender_ed25519_pk', 'TEXT'],
   ];
 
   Future<void> _ensureLateColumns(Database db) async {
@@ -124,7 +126,9 @@ class OfflineStorage {
         offline_limit_at_time REAL NOT NULL DEFAULT 0,
         handoff_method TEXT,
         direction TEXT DEFAULT 'sent',
-        sender_public_key TEXT
+        sender_public_key TEXT,
+        device_signature_ed25519 TEXT,
+        sender_ed25519_pk TEXT
       )
     ''');
 

@@ -1,3 +1,5 @@
+import base64
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from ..database import get_db
@@ -120,3 +122,68 @@ def get_me(
         is_active=current_user.is_active,
         created_at=current_user.created_at,
     )
+
+
+@router.post("/device-key")
+def register_device_key(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Register this device's Ed25519 public key (Feature B).
+
+    The key is the trust root for offline blobs: at sync the backend rebuilds
+    the v1 canonical payload and verifies the blob's signature against the key
+    stored here. Re-registering overwrites — a user has one signing device, and
+    a fresh install legitimately generates a fresh key.
+
+    PROD-TODO: overwriting silently means a stolen session can re-point the
+    trust root. Production should require re-auth (or a second factor) to
+    rotate a device key, and keep the old key active for a grace period so
+    blobs already in flight still settle.
+    """
+    key_b64 = (payload or {}).get("public_key_b64", "")
+    if not isinstance(key_b64, str) or not key_b64:
+        raise HTTPException(status_code=400, detail="public_key_b64 required")
+
+    try:
+        raw = base64.b64decode(key_b64, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="public_key_b64 is not valid base64")
+    if len(raw) != 32:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ed25519 public keys are 32 bytes, got {len(raw)}",
+        )
+
+    rotated = (
+        current_user.device_public_key_b64 is not None
+        and current_user.device_public_key_b64 != key_b64
+    )
+    current_user.device_public_key_b64 = key_b64
+    db.commit()
+
+    try:
+        from ..services import ops_events as ops
+        ops.emit(
+            "device_key_registered",
+            user=ops.mask_user(current_user.full_name, current_user.id),
+            rotated=rotated,
+        )
+    except Exception:
+        pass
+
+    return {
+        "status": "rotated" if rotated else "registered",
+        "public_key_b64": key_b64,
+    }
+
+
+@router.get("/device-key")
+def get_device_key(current_user: User = Depends(get_current_user)):
+    """Lets the app confirm the server still holds its key (self-heal check)."""
+    return {
+        "registered": current_user.device_public_key_b64 is not None,
+        "public_key_b64": current_user.device_public_key_b64,
+    }

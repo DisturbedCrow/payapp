@@ -79,3 +79,61 @@ def canonical_payload(blob: dict) -> str:
         normalize_timestamp(blob.get("timestamp", "")),
         str(blob.get("nonce", "")),
     ])
+
+# ── Feature B, v1 Ed25519 canonical payload ───────────────────────────
+#
+# Distinct from canonical_payload() above, which covers the pre-existing
+# ECDSA P-256 signature. The spec defines this one exactly:
+#
+#     v1|{sender_id}|{receiver_id}|{amount}|{timestamp}|{nonce}
+#
+#   amount     fixed 2-decimal, dot separator, no thousands separators
+#   timestamp  UTC ISO-8601 with Z, SECOND precision (2026-09-13T10:00:00Z)
+#
+# Second precision is deliberate: Dart's toIso8601String() emits milliseconds,
+# sometimes microseconds, so both sides truncate to whole seconds and the
+# formats cannot drift. The blob id is not covered — that is the spec's
+# choice; dedup is on (sender, receiver, nonce, timestamp) anyway.
+
+TEST_VECTOR_V1_BLOB = {
+    "sender_id": "sender-abc",
+    "receiver_id": "receiver-xyz",
+    "amount": 250.0,
+    "timestamp": "2026-09-13T10:00:00.000Z",
+    "nonce": "nonce-0001",
+}
+TEST_VECTOR_V1_CANONICAL = (
+    "v1|sender-abc|receiver-xyz|250.00|2026-09-13T10:00:00Z|nonce-0001"
+)
+
+
+def truncate_to_seconds(timestamp) -> str:
+    """UTC ISO-8601, whole seconds, trailing Z."""
+    if isinstance(timestamp, datetime):
+        dt = timestamp
+    elif isinstance(timestamp, str):
+        raw = timestamp.strip()
+        if not raw:
+            return ""
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return raw
+    else:
+        return str(timestamp)
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def canonical_payload_v1(blob: dict) -> str:
+    """The v1 string the client's Ed25519 key signed."""
+    return "|".join([
+        "v1",
+        str(blob.get("sender_id", "")),
+        str(blob.get("receiver_id", "")),
+        f"{float(blob.get('amount', 0)):.2f}",
+        truncate_to_seconds(blob.get("timestamp", "")),
+        str(blob.get("nonce", "")),
+    ])

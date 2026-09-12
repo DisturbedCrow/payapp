@@ -3,25 +3,39 @@ import '../models/payment_blob.dart';
 import '../models/payment_token.dart';
 import '../models/transaction.dart';
 
+/// Signature schemes a handoff QR can carry.
+class SignatureAlg {
+  /// Feature B — signature over `canonicalPayloadV1(blob)`.
+  static const String ed25519 = 'ed25519';
+
+  /// Legacy — DER signature over `canonicalPayload(blob)`.
+  static const String ecdsaP256 = 'ecdsa-p256';
+}
+
 /// A signed payment blob handed sender → receiver through a QR code
 /// ("Case 3b": both phones offline, no BLE).
 ///
-/// The receiver can verify this entirely offline: [signature] is an ECDSA
-/// P-256 signature over `canonicalPayload(blob)` made by the private key
-/// matching [senderPublicKey].
+/// The receiver can verify this entirely offline: [signature] was made by the
+/// private key matching [senderPublicKey], over the canonical payload that
+/// [alg] selects.
 class BlobHandoff {
   final PaymentBlob blob;
 
-  /// Base64 DER ECDSA signature over `canonicalPayload(blob)`.
+  /// Base64 signature, in the scheme named by [alg].
   final String signature;
 
-  /// Base64 compressed P-256 public key of the sending device.
+  /// Base64 public key of the sending device, in the scheme named by [alg].
   final String senderPublicKey;
+
+  /// Which scheme [signature] and [senderPublicKey] use. QRs produced before
+  /// Feature B carry no `alg` and default to ECDSA P-256.
+  final String alg;
 
   const BlobHandoff({
     required this.blob,
     required this.signature,
     required this.senderPublicKey,
+    this.alg = SignatureAlg.ecdsaP256,
   });
 }
 
@@ -103,6 +117,7 @@ class QrTransferService {
     required PaymentBlob blob,
     required String signature,
     required String senderPublicKey,
+    String alg = SignatureAlg.ecdsaP256,
   }) {
     final payload = <String, dynamic>{
       'v': blobHandoffVersion,
@@ -119,6 +134,7 @@ class QrTransferService {
       },
       'sig': signature,
       'spk': senderPublicKey,
+      'alg': alg,
     };
     return base64Url.encode(utf8.encode(jsonEncode(payload)));
   }
@@ -149,6 +165,15 @@ class QrTransferService {
       final spk = decoded['spk'];
       if (sig is! String || sig.isEmpty) return null;
       if (spk is! String || spk.isEmpty) return null;
+
+      // Absent on QRs produced before Feature B — those are ECDSA.
+      final rawAlg = decoded['alg'];
+      final alg = rawAlg is String && rawAlg.isNotEmpty
+          ? rawAlg
+          : SignatureAlg.ecdsaP256;
+      if (alg != SignatureAlg.ed25519 && alg != SignatureAlg.ecdsaP256) {
+        return null; // a scheme this build cannot verify
+      }
 
       final id = blobMap['id'];
       final senderId = blobMap['sender_id'];
@@ -186,6 +211,7 @@ class QrTransferService {
         blob: blob,
         signature: sig,
         senderPublicKey: spk,
+        alg: alg,
       );
     } catch (_) {
       return null;

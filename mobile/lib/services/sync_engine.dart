@@ -4,6 +4,7 @@ import 'api_service.dart';
 import 'connectivity_service.dart';
 import 'offline_limit_service.dart';
 import 'offline_queue_service.dart';
+import 'device_ed25519_service.dart';
 
 /// The SyncEngine submits pending [PaymentBlob]s to the backend when
 /// connectivity is restored and processes the server's response:
@@ -31,6 +32,11 @@ class SyncEngine {
   final _connectivity = ConnectivityService();
   final _queue = OfflineQueueService();
   final _limitService = OfflineLimitService();
+
+  /// Set by HomeScreen after login so the engine can retry Ed25519 key
+  /// registration once connectivity comes back.
+  String? _currentUserId;
+  set currentUserId(String? id) => _currentUserId = id;
 
   StreamSubscription<bool>? _connectivitySub;
   Timer? _periodicTimer;
@@ -144,6 +150,13 @@ class SyncEngine {
         final restored = (current + limitToRestore).clamp(0.0, total);
         // Only restore the remaining balance — do NOT reset total or expiry
         await _limitService.updateRemainingOnly(restored);
+      }
+
+      // Feature B retry hook: if the key could not be registered at login
+      // (airplane mode, backend asleep), catch up now that we are demonstrably
+      // online. Cheap and idempotent — it short-circuits once registered.
+      if (_currentUserId != null) {
+        await DeviceEd25519Service().registerWithBackend(_currentUserId!);
       }
 
       // Fetch fresh limit from backend after sync

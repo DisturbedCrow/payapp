@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'config/theme.dart';
+import 'services/device_ed25519_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/transaction_provider.dart';
@@ -15,6 +16,12 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Feature B: make sure the Ed25519 signing key exists before any screen can
+  // ask for a signature. Generating it is local and offline-safe; registering
+  // the public key with the backend happens after login (see HomeScreen).
+  // Not awaited — key generation must never delay first paint.
+  DeviceEd25519Service().ensureKeypair();
   
   // Initialize FFI for SQLite on desktop platforms
   if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.linux || defaultTargetPlatform == TargetPlatform.macOS)) {

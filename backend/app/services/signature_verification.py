@@ -27,9 +27,12 @@ from cryptography.hazmat.primitives.asymmetric.ec import (
 from cryptography.exceptions import InvalidSignature
 from sqlalchemy.orm import Session
 
+from nacl.exceptions import BadSignatureError
+from nacl.signing import VerifyKey
+
 from ..config import SIGNATURE_ENFORCEMENT
 from ..models import DeviceBinding, NonceRegistry, User
-from .signing import canonical_payload
+from .signing import canonical_payload, canonical_payload_v1
 
 
 def build_canonical_payload(blob: dict) -> str:
@@ -57,15 +60,62 @@ def decode_public_key_from_base64(b64_key: str) -> Optional[EllipticCurvePublicK
         return None
 
 
+def verify_ed25519_signature(blob: dict, db: Session) -> Optional[Tuple[bool, str]]:
+    """
+    Verify the v1 Ed25519 signature (Feature B) against the sender's
+    REGISTERED key — never against a key the blob carries, which would let
+    anyone mint a keypair and sign as anybody.
+
+    Returns None when this blob has no Ed25519 signature, so the caller can
+    fall back to the older ECDSA path. Otherwise (is_valid, reason).
+    """
+    sig_b64 = blob.get("device_signature_ed25519") or ""
+    if not sig_b64:
+        return None
+
+    sender_id = blob.get("sender_id", "")
+    sender = db.query(User).filter(User.id == sender_id).first()
+    registered = sender.device_public_key_b64 if sender else None
+    if not registered:
+        return False, "unsigned_device"
+
+    canonical = canonical_payload_v1(blob)
+    try:
+        VerifyKey(base64.b64decode(registered)).verify(
+            canonical.encode("utf-8"), base64.b64decode(sig_b64)
+        )
+    except BadSignatureError:
+        return False, "signature_mismatch"
+    except Exception as exc:
+        return False, f"verification_error: {exc}"
+
+    binding = (
+        db.query(DeviceBinding)
+        .filter(DeviceBinding.user_id == sender_id, DeviceBinding.is_active == True)  # noqa: E712
+        .first()
+    )
+    if binding:
+        binding.last_used_at = datetime.utcnow()
+    return True, "valid_ed25519"
+
+
 def verify_blob_signature(
     blob: dict,
     db: Session,
 ) -> Tuple[bool, str]:
     """
-    Verify the ECDSA signature on a payment blob.
+    Verify a payment blob's device signature.
+
+    Ed25519 (Feature B) is authoritative when present; blobs from older builds
+    that only carry the ECDSA P-256 signature keep working through the legacy
+    path below.
 
     Returns: (is_valid, reason)
     """
+    ed = verify_ed25519_signature(blob, db)
+    if ed is not None:
+        return ed
+
     signature_b64 = blob.get("device_signature", "")
     sender_public_key_b64 = blob.get("sender_public_key", "")
     sender_id = blob.get("sender_id", "")

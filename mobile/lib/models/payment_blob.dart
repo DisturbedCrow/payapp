@@ -40,6 +40,30 @@ String canonicalPayload(PaymentBlob b) {
       '${b.timestamp.toUtc().toIso8601String()}|${b.nonce}';
 }
 
+/// Feature B — the v1 payload signed by the device's Ed25519 key.
+///
+///     v1|{sender_id}|{receiver_id}|{amount}|{timestamp}|{nonce}
+///
+/// Mirrored byte-for-byte by `canonical_payload_v1` in
+/// backend/app/services/signing.py, and covered by the shared test vector in
+/// test/canonical_payload_test.dart.
+///
+/// Timestamps are truncated to WHOLE SECONDS on both sides. Dart emits
+/// milliseconds (sometimes microseconds) from toIso8601String(), so pinning
+/// the precision here is what stops the two formats drifting apart and
+/// rejecting every real signature.
+String canonicalPayloadV1(PaymentBlob b) {
+  final utc = b.timestamp.toUtc();
+  final ts = '${utc.year.toString().padLeft(4, '0')}-'
+      '${utc.month.toString().padLeft(2, '0')}-'
+      '${utc.day.toString().padLeft(2, '0')}T'
+      '${utc.hour.toString().padLeft(2, '0')}:'
+      '${utc.minute.toString().padLeft(2, '0')}:'
+      '${utc.second.toString().padLeft(2, '0')}Z';
+  return 'v1|${b.senderId}|${b.receiverId}|'
+      '${b.amount.toStringAsFixed(2)}|$ts|${b.nonce}';
+}
+
 /// A PaymentBlob represents a single offline payment capture.
 /// It is decoupled from settlement — the blob is stored locally and
 /// submitted to the backend when connectivity is restored.
@@ -63,6 +87,14 @@ class PaymentBlob {
   /// device has not yet registered its key.
   final String? senderPublicKey;
 
+  /// Feature B: base64 Ed25519 signature over [canonicalPayloadV1]. The
+  /// backend prefers this over [deviceSignature] whenever it is present.
+  final String? deviceSignatureEd25519;
+
+  /// Base64 raw Ed25519 public key of the sender, so a QR receiver can verify
+  /// the blob offline before the backend ever sees it.
+  final String? senderEd25519Pk;
+
   /// 'qr' | 'ble' | null — how the blob reached the counterparty offline.
   /// Mutable: the blob is enqueued before the handoff actually happens.
   String? handoffMethod;
@@ -83,6 +115,8 @@ class PaymentBlob {
     required this.isOffline,
     required this.offlineLimitAtTime,
     this.senderPublicKey,
+    this.deviceSignatureEd25519,
+    this.senderEd25519Pk,
     this.handoffMethod,
     this.direction = BlobDirection.sent,
   })  : id = id ?? const Uuid().v4(),
@@ -96,6 +130,8 @@ class PaymentBlob {
     String? deviceSignature,
     String? status,
     String? senderPublicKey,
+    String? deviceSignatureEd25519,
+    String? senderEd25519Pk,
     String? handoffMethod,
     String? direction,
   }) {
@@ -111,6 +147,9 @@ class PaymentBlob {
       isOffline: isOffline,
       offlineLimitAtTime: offlineLimitAtTime,
       senderPublicKey: senderPublicKey ?? this.senderPublicKey,
+      deviceSignatureEd25519:
+          deviceSignatureEd25519 ?? this.deviceSignatureEd25519,
+      senderEd25519Pk: senderEd25519Pk ?? this.senderEd25519Pk,
       handoffMethod: handoffMethod ?? this.handoffMethod,
       direction: direction ?? this.direction,
     );
@@ -135,6 +174,8 @@ class PaymentBlob {
       isOffline: json['is_offline'] ?? true,
       offlineLimitAtTime: (json['offline_limit_at_time'] ?? 0).toDouble(),
       senderPublicKey: json['sender_public_key'] as String?,
+      deviceSignatureEd25519: json['device_signature_ed25519'] as String?,
+      senderEd25519Pk: json['sender_ed25519_pk'] as String?,
       handoffMethod: json['handoff_method'] as String?,
       direction: json['direction'] ?? BlobDirection.sent,
     );
@@ -157,6 +198,9 @@ class PaymentBlob {
       'is_offline': isOffline,
       'offline_limit_at_time': offlineLimitAtTime,
       if (senderPublicKey != null) 'sender_public_key': senderPublicKey,
+      if (deviceSignatureEd25519 != null)
+        'device_signature_ed25519': deviceSignatureEd25519,
+      if (senderEd25519Pk != null) 'sender_ed25519_pk': senderEd25519Pk,
       if (handoffMethod != null) 'handoff_method': handoffMethod,
       'direction': direction,
     };
@@ -177,6 +221,8 @@ class PaymentBlob {
       'is_offline': isOffline ? 1 : 0,
       'offline_limit_at_time': offlineLimitAtTime,
       'sender_public_key': senderPublicKey,
+      'device_signature_ed25519': deviceSignatureEd25519,
+      'sender_ed25519_pk': senderEd25519Pk,
       'handoff_method': handoffMethod,
       'direction': direction,
     };
@@ -197,6 +243,8 @@ class PaymentBlob {
       isOffline: (map['is_offline'] ?? 1) == 1,
       offlineLimitAtTime: (map['offline_limit_at_time'] ?? 0).toDouble(),
       senderPublicKey: map['sender_public_key'] as String?,
+      deviceSignatureEd25519: map['device_signature_ed25519'] as String?,
+      senderEd25519Pk: map['sender_ed25519_pk'] as String?,
       handoffMethod: map['handoff_method'] as String?,
       direction: (map['direction'] as String?) ?? BlobDirection.sent,
     );

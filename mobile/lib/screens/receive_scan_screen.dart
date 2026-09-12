@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../services/offline_queue_service.dart';
 import '../services/qr_transfer.dart';
 import '../services/security/device_key_service.dart';
+import '../services/device_ed25519_service.dart';
 
 /// Case 3b — RECEIVER side of the signed-blob QR handoff.
 ///
@@ -105,12 +106,23 @@ class _ReceiveScanScreenState extends State<ReceiveScanScreen> {
     // the sender's registered key and checks limits/dedup. The receiver's
     // offline view is provisional by design; the AI credit limit caps
     // systemic exposure.
-    final canonical = canonicalPayload(blob);
-    final signatureValid = _deviceKeys.verifySignatureBase64(
-      canonical,
-      handoff.signature,
-      handoff.senderPublicKey,
-    );
+    // Each scheme signs a different canonical string, so the QR says which
+    // one it used and we verify against the matching pair. Getting this wrong
+    // would reject every genuine payment.
+    final bool signatureValid;
+    if (handoff.alg == SignatureAlg.ed25519) {
+      signatureValid = await DeviceEd25519Service().verify(
+        canonicalPayloadV1(blob),
+        handoff.signature,
+        handoff.senderPublicKey,
+      );
+    } else {
+      signatureValid = _deviceKeys.verifySignatureBase64(
+        canonicalPayload(blob),
+        handoff.signature,
+        handoff.senderPublicKey,
+      );
+    }
     if (!signatureValid) {
       _fail(
         'Signature check failed.\n'
@@ -152,12 +164,26 @@ class _ReceiveScanScreenState extends State<ReceiveScanScreen> {
 
     // 5. Persist. Marked as RECEIVED so the limit/risk arithmetic on this
     //    device (which only ever deducted for money it sent) leaves it alone.
-    final toStore = blob.copyWith(
-      status: BlobStatus.pendingSync,
-      direction: BlobDirection.received,
-      handoffMethod: HandoffMethod.qr,
-      senderPublicKey: handoff.senderPublicKey,
-    );
+    // Keep the signature in the field that matches its scheme, so the copy we
+    // upload verifies server-side exactly as the sender's own copy would.
+    // copyWith treats null as "leave unchanged", so build the scheme-specific
+    // overrides explicitly rather than passing nulls.
+    final isEd25519 = handoff.alg == SignatureAlg.ed25519;
+    final toStore = isEd25519
+        ? blob.copyWith(
+            status: BlobStatus.pendingSync,
+            direction: BlobDirection.received,
+            handoffMethod: HandoffMethod.qr,
+            deviceSignatureEd25519: handoff.signature,
+            senderEd25519Pk: handoff.senderPublicKey,
+          )
+        : blob.copyWith(
+            status: BlobStatus.pendingSync,
+            direction: BlobDirection.received,
+            handoffMethod: HandoffMethod.qr,
+            deviceSignature: handoff.signature,
+            senderPublicKey: handoff.senderPublicKey,
+          );
     try {
       await _queueService.enqueue(toStore);
     } catch (e) {

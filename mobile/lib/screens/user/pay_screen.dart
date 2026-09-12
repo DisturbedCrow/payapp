@@ -17,8 +17,10 @@ import '../../services/connectivity_service.dart';
 import '../../services/api_service.dart';
 import '../../services/ble_service.dart';
 import '../../services/voice_intent_parser.dart';
+import '../../services/voice_intent_remote.dart';
 import '../../services/voice_service.dart';
 import '../../services/security/device_key_service.dart';
+import '../../services/device_ed25519_service.dart';
 import '../../config/constants.dart';
 import '../../config/theme.dart';
 import '../payment_receipt_screen.dart';
@@ -76,8 +78,14 @@ class _PayScreenState extends State<PayScreen> {
   Future<void> startVoicePay() async {
     if (!AppConstants.voicePayEnabled) return;
 
-    final intent = await showVoicePaySheet(context);
-    if (!mounted || intent == null) return; // cancelled, or "Type instead"
+    final localIntent = await showVoicePaySheet(context);
+    if (!mounted || localIntent == null) return; // cancelled, or "Type instead"
+
+    // LLM garnish (spec G6): only when the deterministic parser was unsure
+    // AND we are online. Returns null on any timeout, error or offline, so
+    // the airplane-mode demo path never depends on it.
+    final intent = await VoiceIntentRemote.refine(localIntent) ?? localIntent;
+    if (!mounted) return;
 
     final recent = await VoiceService().loadRecentPayees();
     final matches = intent.recipientQuery == null
@@ -517,6 +525,9 @@ class _PayScreenState extends State<PayScreen> {
             blob: blob,
             signature: signed.signature,
             senderPublicKey: signed.senderPublicKey,
+            alg: signed.isEd25519
+                ? SignatureAlg.ed25519
+                : SignatureAlg.ecdsaP256,
           ),
         ),
       );
@@ -552,26 +563,50 @@ class _PayScreenState extends State<PayScreen> {
   /// the placeholder so a keystore hiccup can never block a payment on
   /// stage; the backend already flags these as `unsigned_blob`.
   Future<_SignedBlob> _signBlob(PaymentBlob blob) async {
+    var signed = blob;
+    var ecdsaSignature = blob.deviceSignature;
+    var ecdsaPublicKey = '';
+    var ed25519Signature = '';
+    var ed25519PublicKey = '';
+
+    // Ed25519 (Feature B) — the trust root the backend verifies against the
+    // key registered via POST /api/auth/device-key.
     try {
-      final keys = DeviceKeyService();
-      final signature = await keys.signTransaction(canonicalPayload(blob));
-      final publicKey = await keys.getPublicKeyBase64() ?? '';
-      return _SignedBlob(
-        blob: blob.copyWith(
-          deviceSignature: signature,
-          senderPublicKey: publicKey.isEmpty ? null : publicKey,
-        ),
-        signature: signature,
-        senderPublicKey: publicKey,
+      final ed = DeviceEd25519Service();
+      ed25519Signature = await ed.sign(canonicalPayloadV1(blob));
+      ed25519PublicKey = await ed.publicKeyB64();
+      signed = signed.copyWith(
+        deviceSignatureEd25519: ed25519Signature,
+        senderEd25519Pk: ed25519PublicKey.isEmpty ? null : ed25519PublicKey,
       );
     } catch (e) {
-      debugPrint('Device signing failed, falling back to placeholder: $e');
-      return _SignedBlob(
-        blob: blob,
-        signature: blob.deviceSignature,
-        senderPublicKey: '',
-      );
+      debugPrint('Ed25519 signing failed: $e');
     }
+
+    // ECDSA P-256 — kept so older backends and the BLE handshake keep working.
+    try {
+      final keys = DeviceKeyService();
+      ecdsaSignature = await keys.signTransaction(canonicalPayload(blob));
+      ecdsaPublicKey = await keys.getPublicKeyBase64() ?? '';
+      signed = signed.copyWith(
+        deviceSignature: ecdsaSignature,
+        senderPublicKey: ecdsaPublicKey.isEmpty ? null : ecdsaPublicKey,
+      );
+    } catch (e) {
+      debugPrint('ECDSA signing failed, keeping placeholder: $e');
+    }
+
+    if (ed25519Signature.isEmpty && ecdsaPublicKey.isEmpty) {
+      debugPrint('WARNING: blob ${blob.id} is unsigned by both schemes');
+    }
+
+    return _SignedBlob(
+      blob: signed,
+      signature: ed25519Signature.isNotEmpty ? ed25519Signature : ecdsaSignature,
+      senderPublicKey:
+          ed25519Signature.isNotEmpty ? ed25519PublicKey : ecdsaPublicKey,
+      isEd25519: ed25519Signature.isNotEmpty,
+    );
   }
 
   /// Shows a dialog with live BLE transfer steps and returns the result.
@@ -1469,12 +1504,20 @@ class _TokenQRSection extends StatelessWidget {
 /// `senderPublicKey` is empty only on the signing-failure fallback path.
 class _SignedBlob {
   final PaymentBlob blob;
+
+  /// The signature the QR handoff should carry — Ed25519 when we produced
+  /// one, otherwise the legacy ECDSA signature.
   final String signature;
   final String senderPublicKey;
+
+  /// True when [signature] is Ed25519, so the receiver knows which canonical
+  /// payload to verify it against.
+  final bool isEd25519;
 
   const _SignedBlob({
     required this.blob,
     required this.signature,
     required this.senderPublicKey,
+    this.isEd25519 = false,
   });
 }
