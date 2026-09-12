@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP is permitted ONLY for private-range addresses, so the demo
+  laptop can serve the backend over the venue LAN (or `adb reverse`) while
+  every public host still requires TLS.
+
+  PROD-TODO: drop this file entirely in production and rely on the certificate
+  pinning in lib/services/security/certificate_pinning_service.dart.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>      <!-- Android emulator host -->
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">192.168.1.0</domain>
+        <domain includeSubdomains="true">192.168.1.11</domain>  <!-- demo laptop -->
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>

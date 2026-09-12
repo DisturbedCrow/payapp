@@ -60,3 +60,41 @@ TOKEN_DENOMINATIONS = [50.0, 100.0, 200.0, 500.0, 1000.0]
 # ML Model 
 ML_MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ml_model")
 ML_MODEL_PATH = os.path.join(ML_MODEL_DIR, "risk_model.joblib")
+
+
+# ── Demo-day feature flags (Sept 13 sprint) ───────────────────────
+# Everything below is env-driven with demo-safe defaults so the stack
+# boots on a laptop with no configuration at all.
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+APP_NAME = os.getenv("APP_NAME", "SetuPay")
+
+# Master switch. In DEMO_MODE fraud rules reject; otherwise they flag only.
+DEMO_MODE = _env_bool("DEMO_MODE", True)
+
+# log_only  → signature failures are recorded + surfaced on the ops dashboard
+#             but the blob still settles (safe default while phones are being
+#             provisioned).
+# enforce   → signature failures reject the blob.
+SIGNATURE_ENFORCEMENT = os.getenv("SIGNATURE_ENFORCEMENT", "log_only").strip().lower()
+
+# GenAI risk explainer. "mock" is always available and is the fallback for
+# every failure path of the anthropic provider.
+EXPLAINER_PROVIDER = os.getenv("EXPLAINER_PROVIDER", "mock").strip().lower()
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
+EXPLAINER_TIMEOUT_SECONDS = float(os.getenv("EXPLAINER_TIMEOUT_SECONDS", "2.0"))
+EXPLAINER_CACHE_TTL_SECONDS = int(os.getenv("EXPLAINER_CACHE_TTL_SECONDS", "300"))
+
+# Live ops dashboard (projector page) — gated by a token query param.
+OPS_DASH_TOKEN = os.getenv("OPS_DASH_TOKEN", "setupay-demo")
+
+# Velocity rule (Feature F). Deterministic — no randomness on stage.
+VELOCITY_MAX_BLOBS = int(os.getenv("VELOCITY_MAX_BLOBS", "5"))
+VELOCITY_WINDOW_MIN = int(os.getenv("VELOCITY_WINDOW_MIN", "10"))

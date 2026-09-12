@@ -1,30 +1,21 @@
-// This is a basic Flutter widget test.
+// Smoke test: the app builds and mounts without throwing.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+// SplashScreen schedules a 2-second Future.delayed in initState before routing,
+// so the test pumps past it and settles the animation controller — otherwise
+// the test ends with a pending timer and fails.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:offline_pay/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('App builds and reaches a route without throwing',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OfflinePayApp());
     await tester.pump();
+    expect(find.byType(MaterialApp), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Drain the splash delay + the fade/scale animation.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
   });
 }

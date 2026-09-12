@@ -481,8 +481,4 @@ class SecureBLEProtocol {
 
 /// Build a deterministic canonical string for signing.
 /// Order matters — must be identical on sender, receiver, and backend.
-String _buildCanonicalPayload(PaymentBlob blob) {
-  return '${blob.id}|${blob.senderId}|${blob.receiverId}|'
-      '${blob.amount.toStringAsFixed(2)}|'
-      '${blob.timestamp.toUtc().toIso8601String()}|${blob.nonce}';
-}
+String _buildCanonicalPayload(PaymentBlob blob) => canonicalPayload(blob);

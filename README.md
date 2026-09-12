@@ -1,6 +1,6 @@
-# PaytmOfflinePay
+# SetuPay
 
-An AI-powered offline payment system built on top of a Paytm-like Flutter + Python stack. Payments work without internet — via local credit limits, BLE device-to-device transfer, and background sync when connectivity is restored.
+**Offline-first payments with an AI trust layer.** *Setu* (सेतु) means "bridge" — SetuPay bridges the gap when the network drops. Payments work without internet via AI-assigned local credit limits, signed payment blobs, QR or BLE device-to-device transfer, and background sync when connectivity returns. It integrates with any UPI app (Paytm, PhonePe, GPay) as an additive SDK layer rather than replacing them.
 
 ---
 
@@ -18,6 +18,26 @@ An AI-powered offline payment system built on top of a Paytm-like Flutter + Pyth
 - [Deployment](#deployment)
 - [Installing the App](#installing-the-app)
 - [Presentation](#presentation)
+
+---
+
+## What we built on Sept 13 (AI hackathon sprint)
+
+Everything below is new work from the demo sprint, on the `demo-day` branch. Each
+feature is behind a flag (`mobile/lib/config/constants.dart`, `backend/app/config.py`)
+so the three original payment cases keep working untouched.
+
+| | Feature | Where |
+|---|---|---|
+| **B** | **Real device signing end-to-end.** The canonical signing payload now lives in one place per side (`backend/app/services/signing.py`, `canonicalPayload()` in `payment_blob.dart`) with a shared cross-language test vector. Every offline blob is signed with the device's ECDSA P-256 key and verified at sync against the *registered* device binding. `SIGNATURE_ENFORCEMENT=log_only\|enforce`. | `backend/app/services/signing.py`, `mobile/lib/models/payment_blob.dart` |
+| **C** | **Signed-blob-in-QR handoff ("Case 3b").** Both phones in airplane mode: the sender renders the signed blob as a QR, the receiver scans and verifies the signature *locally, offline*. De-risks BLE on a stage with 150 phones. The backend's dedup collapses the sender's and receiver's copies into one settlement and answers the second copy with `confirmed`, not a scary rejection. | `mobile/lib/screens/qr_handoff_screen.dart`, `receive_scan_screen.dart` |
+| **D** | **GenAI risk explainer.** Turns the sklearn model's feature vector into plain English or Hinglish: *"Your offline limit is ₹1,500 because your KYC is verified to tier 2 and 3 payments are still waiting to sync."* Mock templates are the always-present fallback (<1 ms, no key needed); Claude is used when `EXPLAINER_PROVIDER=anthropic`, with a 2-second timeout and silent degradation. | `backend/app/services/explainer.py`, `GET /api/user/limit-explanation` |
+| **E** | **Live ops dashboard for the projector.** A dark, self-contained page polling every 2 s that shows payments arriving, settlements, AI limits recalculating, and attacks being blocked with the explainer's own words. | `GET /dashboard/live?token=...` |
+| **F** | **Fraud rules + red-team CLI.** Replay, forged-signature, over-limit and velocity rules, each returning a machine reason and a human `reason_detail`. `python -m demo.attack all` runs the four attacks from a terminal and exits non-zero if any succeeds — a security regression test that doubles as a demo beat. | `backend/demo/attack.py` |
+| **G** | **Hindi/Hinglish voice payments, fully offline.** *"Ramesh ko do sau rupaye bhejo"* → confirm screen → the existing offline payment path. Intent parsing is pure Dart (regex + Hindi number-word composition), so it works in airplane mode. | `mobile/lib/services/voice_intent_parser.dart` |
+| **A** | **Rebrand to SetuPay** — original product identity, deep indigo + saffron, positioned as a UPI-app SDK rather than a wallet clone. | throughout |
+
+Run the demo: `backend/run_local.sh`, then `presentation/DEMO_RUNBOOK.md`.
 
 ---
 
@@ -198,7 +218,7 @@ payapp_/
 │   │   ├── main.dart
 │   │   ├── config/
 │   │   │   ├── constants.dart
-│   │   │   └── theme.dart           # Paytm brand palette
+│   │   │   └── theme.dart           # SetuPay brand palette (indigo + saffron)
 │   │   ├── models/
 │   │   │   ├── payment_blob.dart    # Core offline payment unit
 │   │   │   ├── payment_token.dart
@@ -239,8 +259,8 @@ payapp_/
 │   ├── android/
 │   │   └── app/src/main/kotlin/.../
 │   │       └── MainActivity.kt       # BLE peripheral (Android) via BluetoothGattServer
-│   ├── PaytmOfflinePay.apk           # Latest release APK (Android)
-│   └── PaytmOfflinePay.ipa           # Latest build IPA (iOS)
+│   ├── SetuPay-demo-day.apk          # Demo-day APK (Android)
+│   └── PaytmOfflinePay.ipa           # Pre-rebrand iOS build (kept for reference)
 │
 ├── backend/                          # FastAPI server
 │   ├── app/
@@ -264,7 +284,7 @@ payapp_/
 │
 ├── presentation/
 │   ├── slides.md                     # 15-slide Slidev presentation
-│   ├── PaytmOfflinePay_Slides.pdf    # Exported PDF
+│   ├── SetuPay_Slides.pdf            # Exported PDF
 │   └── assets/
 │       ├── diagrams/                 # Mermaid architecture PNGs
 │       │   ├── arch.png
@@ -449,12 +469,12 @@ Environment variables to set in Render dashboard:
 ### Android
 
 1. Enable **Install unknown apps** in device settings
-2. Transfer `mobile/PaytmOfflinePay.apk` to device
+2. Transfer `mobile/SetuPay-demo-day.apk` to device
 3. Tap the file to install
 
 Or via ADB:
 ```bash
-adb install mobile/PaytmOfflinePay.apk
+adb install mobile/SetuPay-demo-day.apk
 ```
 
 ### iOS
@@ -489,7 +509,7 @@ npm install
 npm run dev          # live preview at localhost:3030
 ```
 
-Or open the exported PDF directly: `presentation/PaytmOfflinePay_Slides.pdf`
+Or open the exported PDF directly: `presentation/SetuPay_Slides.pdf`
 
 **Slides cover:**
 1. Cover — market stats (₹18.4L Cr UPI volume, 500M users)

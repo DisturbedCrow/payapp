@@ -38,6 +38,21 @@ class OfflineQueueService {
     );
   }
 
+  /// Record how the blob actually reached the counterparty ('qr' | 'ble').
+  ///
+  /// The blob is enqueued the moment the limit is deducted, which is *before*
+  /// the handoff happens, so the route is written back afterwards. The
+  /// backend reads `handoff_method` off the synced blob for the ops dashboard.
+  Future<void> updateHandoffMethod(String id, String method) async {
+    final db = await _db;
+    await db.update(
+      'payment_blobs',
+      {'handoff_method': method},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   // ── Read ─────────────────────────────────────────────────────
 
   /// All blobs with status `pending_sync`, oldest first.
@@ -76,11 +91,57 @@ class OfflineQueueService {
     return rows.map(PaymentBlob.fromDbMap).toList();
   }
 
+  /// Look up a blob by its nonce. Used by the QR receive flow to detect a
+  /// blob that was already scanned ("Already received") before touching the
+  /// queue — `enqueue` ignores the duplicate silently, which is safe but
+  /// indistinguishable from a fresh insert.
+  Future<PaymentBlob?> findByNonce(String nonce) async {
+    final db = await _db;
+    final rows = await db.query(
+      'payment_blobs',
+      where: 'nonce = ?',
+      whereArgs: [nonce],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return PaymentBlob.fromDbMap(rows.first);
+  }
+
+  /// Blobs this device is on the hook for — i.e. money it SENT. Received
+  /// blobs live in the same table but were never deducted from this
+  /// device's offline limit, so they must not feed limit/risk arithmetic.
+  Future<List<PaymentBlob>> getPendingSentBlobs() async {
+    final pending = await getPendingBlobs();
+    return pending.where((b) => !b.isReceived).toList();
+  }
+
   /// Count of blobs currently pending sync.
   Future<int> getPendingCount() async {
     final db = await _db;
     final result = await db.rawQuery(
       "SELECT COUNT(*) as cnt FROM payment_blobs WHERE status = 'pending_sync'",
+    );
+    return result.first['cnt'] as int? ?? 0;
+  }
+
+  /// Sum of amounts for *outgoing* blobs pending sync. Money the user has
+  /// been paid but not yet settled is not something they owe, so it must not
+  /// appear in their "pending" total or count against their risk penalty.
+  Future<double> getPendingSentTotal() async {
+    final db = await _db;
+    final result = await db.rawQuery(
+      "SELECT COALESCE(SUM(amount), 0) as total FROM payment_blobs "
+      "WHERE status = 'pending_sync' AND COALESCE(direction, 'sent') = 'sent'",
+    );
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  /// Count of *outgoing* blobs pending sync.
+  Future<int> getPendingSentCount() async {
+    final db = await _db;
+    final result = await db.rawQuery(
+      "SELECT COUNT(*) as cnt FROM payment_blobs "
+      "WHERE status = 'pending_sync' AND COALESCE(direction, 'sent') = 'sent'",
     );
     return result.first['cnt'] as int? ?? 0;
   }

@@ -8,14 +8,16 @@
 build/
 pubspec.lock
 
-# Android
-android/
+# Android — the platform folder IS tracked (the demo-day manifest lives there);
+# only generated output and signing material are ignored.
 **/android/.gradle/
-**/android/captures/
-**/android/gradlew
-**/android/gradlew.bat
+**/android/build/
+**/android/app/build/
+**/android/.cxx/
 **/android/local.properties
+**/android/*.iml
 **/android/**/GeneratedPluginRegistrant.java
+**/android/captures/
 **/android/key.properties
 *.jks
 *.keystore
@@ -61,6 +63,7 @@ app.*.map.json
 # IDE
 .vscode/
 .idea/
+.dart_tool/
 *.iml
 *.ipr
 *.iws
@@ -68,3 +71,6 @@ app.*.map.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Kotlin compiler session files
+**/android/.kotlin/

@@ -1,6 +1,29 @@
 import 'dart:convert';
+import '../models/payment_blob.dart';
 import '../models/payment_token.dart';
 import '../models/transaction.dart';
+
+/// A signed payment blob handed sender → receiver through a QR code
+/// ("Case 3b": both phones offline, no BLE).
+///
+/// The receiver can verify this entirely offline: [signature] is an ECDSA
+/// P-256 signature over `canonicalPayload(blob)` made by the private key
+/// matching [senderPublicKey].
+class BlobHandoff {
+  final PaymentBlob blob;
+
+  /// Base64 DER ECDSA signature over `canonicalPayload(blob)`.
+  final String signature;
+
+  /// Base64 compressed P-256 public key of the sending device.
+  final String senderPublicKey;
+
+  const BlobHandoff({
+    required this.blob,
+    required this.signature,
+    required this.senderPublicKey,
+  });
+}
 
 /// Payload embedded in a receiver's static QR code (merchant / user display).
 /// The sender scans this QR to know who to pay.
@@ -50,6 +73,119 @@ class QrTransferService {
         receiverId: receiverId,
         receiverName: data['receiver_name'] as String? ?? 'Unknown',
         bleUuid: data['ble_uuid'] as String?,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Signed-blob handoff QR (Case 3b — both phones offline) ──────
+
+  /// Wire format version for [encodeBlobHandoff] / [decodeBlobHandoff].
+  static const int blobHandoffVersion = 1;
+
+  /// Discriminator that tells a scanned QR apart from every other QR the
+  /// app produces (`receive_payment`, `offline_payment`).
+  static const String blobHandoffType = 'spay.blob';
+
+  /// Encode a SIGNED blob for display in a QR code.
+  ///
+  /// Shape (base64url of the UTF-8 JSON below, ~550 chars in practice):
+  ///
+  ///     {"v":1,"t":"spay.blob","blob":{...},"sig":"<b64>","spk":"<b64>"}
+  ///
+  /// The blob object carries only the fields the receiver needs to rebuild
+  /// the exact canonical payload that was signed, plus the two offline
+  /// bookkeeping flags. `timestamp` is the UTC form on purpose — the
+  /// canonical payload is built from `timestamp.toUtc()`, so anything else
+  /// would make the signature unverifiable after a timezone round-trip.
+  static String encodeBlobHandoff({
+    required PaymentBlob blob,
+    required String signature,
+    required String senderPublicKey,
+  }) {
+    final payload = <String, dynamic>{
+      'v': blobHandoffVersion,
+      't': blobHandoffType,
+      'blob': <String, dynamic>{
+        'id': blob.id,
+        'sender_id': blob.senderId,
+        'receiver_id': blob.receiverId,
+        'amount': blob.amount,
+        'timestamp': blob.timestamp.toUtc().toIso8601String(),
+        'nonce': blob.nonce,
+        'is_offline': blob.isOffline,
+        'offline_limit_at_time': blob.offlineLimitAtTime,
+      },
+      'sig': signature,
+      'spk': senderPublicKey,
+    };
+    return base64Url.encode(utf8.encode(jsonEncode(payload)));
+  }
+
+  /// Decode a scanned QR string into a [BlobHandoff].
+  ///
+  /// Returns null — never throws — for anything that is not a well-formed
+  /// `spay.blob` payload. This is fed arbitrary camera input, including the
+  /// app's own plain-JSON `receive_payment` QRs and partial scans.
+  static BlobHandoff? decodeBlobHandoff(String raw) {
+    try {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return null;
+      // Fast reject: our other QRs are bare JSON, which is never base64url.
+      if (trimmed.startsWith('{')) return null;
+
+      final bytes = base64Url.decode(base64Url.normalize(trimmed));
+      final decoded = jsonDecode(utf8.decode(bytes));
+      if (decoded is! Map) return null;
+
+      if (decoded['v'] != blobHandoffVersion) return null;
+      if (decoded['t'] != blobHandoffType) return null;
+
+      final blobMap = decoded['blob'];
+      if (blobMap is! Map) return null;
+
+      final sig = decoded['sig'];
+      final spk = decoded['spk'];
+      if (sig is! String || sig.isEmpty) return null;
+      if (spk is! String || spk.isEmpty) return null;
+
+      final id = blobMap['id'];
+      final senderId = blobMap['sender_id'];
+      final receiverId = blobMap['receiver_id'];
+      final nonce = blobMap['nonce'];
+      final amount = blobMap['amount'];
+      final timestamp = blobMap['timestamp'];
+      if (id is! String || id.isEmpty) return null;
+      if (senderId is! String || senderId.isEmpty) return null;
+      if (receiverId is! String || receiverId.isEmpty) return null;
+      if (nonce is! String || nonce.isEmpty) return null;
+      if (amount is! num || amount <= 0) return null;
+      if (timestamp is! String || timestamp.isEmpty) return null;
+
+      final parsedTimestamp = DateTime.tryParse(timestamp);
+      if (parsedTimestamp == null) return null;
+
+      final blob = PaymentBlob(
+        id: id,
+        senderId: senderId,
+        receiverId: receiverId,
+        amount: amount.toDouble(),
+        timestamp: parsedTimestamp,
+        nonce: nonce,
+        deviceSignature: sig,
+        status: BlobStatus.pendingSync,
+        isOffline: blobMap['is_offline'] as bool? ?? true,
+        offlineLimitAtTime:
+            (blobMap['offline_limit_at_time'] as num?)?.toDouble() ?? 0.0,
+        senderPublicKey: spk,
+        handoffMethod: HandoffMethod.qr,
+      );
+
+      return BlobHandoff(
+        blob: blob,
+        signature: sig,
+        senderPublicKey: spk,
       );
     } catch (_) {
       return null;

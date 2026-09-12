@@ -16,8 +16,11 @@ import '../../services/offline_queue_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/api_service.dart';
 import '../../services/ble_service.dart';
+import '../../services/security/device_key_service.dart';
+import '../../config/constants.dart';
 import '../../config/theme.dart';
 import '../payment_receipt_screen.dart';
+import '../qr_handoff_screen.dart';
 
 class PayScreen extends StatefulWidget {
   const PayScreen({super.key});
@@ -366,7 +369,7 @@ class _PayScreenState extends State<PayScreen> {
       return;
     }
 
-    final blob = PaymentBlob(
+    final unsignedBlob = PaymentBlob(
       senderId: senderId,
       receiverId: receiver.receiverId,
       amount: amount,
@@ -374,29 +377,69 @@ class _PayScreenState extends State<PayScreen> {
       offlineLimitAtTime: availableLimit,
     );
 
+    // ── Sign with the device's ECDSA P-256 key BEFORE persisting ──
+    // The signature is what lets the receiver trust this blob offline and
+    // what the backend verifies at settlement. id / timestamp / nonce are
+    // inputs to the canonical payload, so the signed copy must preserve
+    // them verbatim — copyWith does exactly that.
+    final signed = await _signBlob(unsignedBlob);
+    final blob = signed.blob;
+
     await _queueService.enqueue(blob);
     await _limitService.deductFromLimit(amount);
 
-    final pendingBlobs = await _queueService.getPendingBlobs();
-    await _limitService.applyLocalRiskPenalty(pendingBlobs.length);
+    // Only blobs this device SENT represent offline exposure. Received
+    // blobs (Case 3b) live in the same table but cost this device nothing.
+    final pendingSent = await _queueService.getPendingSentBlobs();
+    await _limitService.applyLocalRiskPenalty(pendingSent.length);
 
     // Refresh WalletProvider so displayed limit updates immediately
     if (mounted) await context.read<WalletProvider>().loadCachedTokens();
 
+    // ── Handoff: BLE first when the receiver advertises it ────────
     bool? bleSuccess;
     if (receiver.bleUuid != null) {
       setState(() => _isBLETransferring = true);
       bleSuccess = await _runBLEWithProgress(blob, receiver.bleUuid!);
       setState(() => _isBLETransferring = false);
+      if (bleSuccess == true) {
+        blob.handoffMethod = HandoffMethod.ble;
+        await _queueService.updateHandoffMethod(blob.id, HandoffMethod.ble);
+      }
     }
-
-    final receiptStatus =
-        bleSuccess == true ? ReceiptStatus.sentViaBluetooth : ReceiptStatus.pendingSync;
 
     setState(() {
       _isProcessing = false;
       _scannedReceiver = null;
     });
+
+    // ── Case 3b: hand the signed blob over by QR ──────────────────
+    // Available whether or not the receiver advertises BLE; skipped only
+    // when BLE already delivered the blob.
+    // `senderPublicKey` is empty only when signing fell back to the
+    // placeholder — a QR the receiver could not possibly verify, so skip
+    // straight to the receipt rather than showing an un-scannable handoff.
+    if (AppConstants.qrHandoffEnabled &&
+        bleSuccess != true &&
+        signed.senderPublicKey.isNotEmpty) {
+      blob.handoffMethod = HandoffMethod.qr;
+      await _queueService.updateHandoffMethod(blob.id, HandoffMethod.qr);
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => QrHandoffScreen(
+            blob: blob,
+            signature: signed.signature,
+            senderPublicKey: signed.senderPublicKey,
+          ),
+        ),
+      );
+    }
+
+    final receiptStatus = bleSuccess == true
+        ? ReceiptStatus.sentViaBluetooth
+        : ReceiptStatus.pendingSync;
 
     if (mounted) {
       Navigator.push(
@@ -411,6 +454,37 @@ class _PayScreenState extends State<PayScreen> {
             timestamp: DateTime.now(),
           ),
         ),
+      );
+    }
+  }
+
+  /// Sign [blob] with the device key and attach the public key the backend
+  /// needs to verify it.
+  ///
+  /// PROD-TODO: in production an unsigned blob must be refused — an
+  /// unsigned payment cannot be attributed to a device and is exactly the
+  /// forgery path the signature exists to close. For the demo we degrade to
+  /// the placeholder so a keystore hiccup can never block a payment on
+  /// stage; the backend already flags these as `unsigned_blob`.
+  Future<_SignedBlob> _signBlob(PaymentBlob blob) async {
+    try {
+      final keys = DeviceKeyService();
+      final signature = await keys.signTransaction(canonicalPayload(blob));
+      final publicKey = await keys.getPublicKeyBase64() ?? '';
+      return _SignedBlob(
+        blob: blob.copyWith(
+          deviceSignature: signature,
+          senderPublicKey: publicKey.isEmpty ? null : publicKey,
+        ),
+        signature: signature,
+        senderPublicKey: publicKey,
+      );
+    } catch (e) {
+      debugPrint('Device signing failed, falling back to placeholder: $e');
+      return _SignedBlob(
+        blob: blob,
+        signature: blob.deviceSignature,
+        senderPublicKey: '',
       );
     }
   }
@@ -1252,4 +1326,18 @@ class _TokenQRSection extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A blob plus the signature material the QR handoff needs to carry.
+/// `senderPublicKey` is empty only on the signing-failure fallback path.
+class _SignedBlob {
+  final PaymentBlob blob;
+  final String signature;
+  final String senderPublicKey;
+
+  const _SignedBlob({
+    required this.blob,
+    required this.signature,
+    required this.senderPublicKey,
+  });
 }

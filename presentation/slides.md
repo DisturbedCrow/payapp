@@ -1,10 +1,10 @@
 ---
 theme: seriph
-title: "Paytm OfflinePay — AI-Powered Offline Payments"
+title: "SetuPay — Offline-First Payments with an AI Trust Layer"
 titleTemplate: "%s"
 info: |
-  Team Issavibles · Hackathon 2026
-  AI-powered offline payment infrastructure for India's next 500M users.
+  Team Issavibles · Build in AI for India, Sept 2026
+  Offline-first payment infrastructure with an AI trust layer, for India's next 500M users.
 transition: slide-left
 mdc: true
 highlighter: shiki
@@ -98,15 +98,17 @@ transition: fade
 
 <div v-motion :initial="{opacity:0,x:-80}" :enter="{opacity:1,x:0,transition:{delay:180,duration:600}}">
   <h1 class="text-6xl font-black leading-none mb-3">
-    <span style="color:#fff">Paytm</span>
-    <span style="color:#00B9F1"> Offline</span><span style="color:#FFD700">Pay</span>
+    <span style="color:#fff">Setu</span><span style="color:#FF9933">Pay</span>
+    <span style="color:#5C6BC0" class="text-3xl block mt-2">सेतु — the bridge over the offline gap</span>
   </h1>
 </div>
 
 <div v-motion :initial="{opacity:0,x:-80}" :enter="{opacity:1,x:0,transition:{delay:320,duration:600}}">
   <p class="text-xl text-blue-200 font-light mb-8 max-w-lg leading-relaxed">
-    AI-powered offline payment infrastructure for India's next 500M users —
-    <strong class="text-white">payments that work even when the internet doesn't.</strong>
+    Offline-first payments with an <strong class="text-white">AI trust layer</strong> — an AI credit
+    limit you can read in your own language, signatures that make offline money safe, and a
+    fraud engine you can watch block attacks live.
+    <strong class="text-white">Works with any UPI app.</strong>
   </p>
 </div>
 
@@ -212,9 +214,9 @@ transition: slide-left
   <div class="text-3xl mb-3">🔐</div>
   <div class="font-bold text-lg text-yellow-300 mb-2">Signed Payment Blobs</div>
   <div class="text-sm text-slate-300 leading-relaxed mb-3">
-    Each payment is a cryptographically signed struct — Ed25519 signature, UUID nonce, device fingerprint. Tamper-proof in transit, whether over HTTPS, SQLite queue, or BLE peer-to-peer.
+    Each payment is a cryptographically signed struct — ECDSA P-256 signature over a canonical payload, UUID nonce, registered device binding. Tamper-proof in transit, whether over HTTPS, SQLite queue, or BLE peer-to-peer.
   </div>
-  <span class="pill pill-blue">Ed25519</span>
+  <span class="pill pill-blue">ECDSA P-256</span>
   <span class="pill pill-gold ml-1">Nonce replay</span>
 </div>
 
@@ -612,7 +614,7 @@ transition: slide-left
   </div>
   <div class="text-center mt-3">
     <div class="font-bold text-yellow-300 text-sm">Payment Receipt</div>
-    <div class="text-xs text-slate-400 mt-1">Paytm-style · Amount in words · UPI footer</div>
+    <div class="text-xs text-slate-400 mt-1">SetuPay · Amount in words · UPI footer</div>
   </div>
 </div>
 
@@ -636,7 +638,7 @@ transition: slide-left
 </div>
 
 <!-- ═══════════════════════════════════════════════════════
-     SLIDE 13  PAYTM INTEGRATION
+     SLIDE 13  UPI APP INTEGRATION (SDK)
 ════════════════════════════════════════════════════════════ -->
 ---
 layout: default
@@ -647,7 +649,7 @@ transition: slide-left
 
 <div v-motion :initial="{opacity:0,y:-20}" :enter="{opacity:1,y:0,transition:{duration:400}}">
 
-# <span style="color:#00B9F1">Paytm Integration</span> — Drop-in, Zero Breaking Changes
+# <span style="color:#00B9F1">UPI App Integration (SDK)</span> — Drop-in, Zero Breaking Changes
 
 </div>
 
@@ -740,7 +742,7 @@ transition: slide-left
     <table class="w-full text-xs">
       <thead><tr class="text-slate-400">
         <th class="text-left pb-2">Feature</th>
-        <th class="text-center pb-2">Paytm OfflinePay</th>
+        <th class="text-center pb-2">SetuPay</th>
         <th class="text-center pb-2">GPay</th>
         <th class="text-center pb-2">PhonePe</th>
         <th class="text-center pb-2">Cash</th>

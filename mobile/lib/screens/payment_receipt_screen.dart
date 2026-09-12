@@ -212,16 +212,16 @@ class PaymentReceiptScreen extends StatelessWidget {
                       Text(' | ',
                           style: TextStyle(
                               fontSize: 11, color: Colors.grey.shade300)),
-                      const Text('Pay',
+                      const Text('Setu',
                           style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w900,
                               color: AppTheme.primaryColor)),
-                      const Text('tm Payments Bank',
+                      const Text('Pay',
                           style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: AppTheme.secondaryColor)),
+                              color: AppTheme.saffron)),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -332,20 +332,20 @@ class _HeroSection extends StatelessWidget {
               ),
             ),
 
-            // Paytm logo
+            // SetuPay logo
             const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Pay',
+                Text('Setu',
                     style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
                         color: AppTheme.primaryColor)),
-                Text('tm',
+                Text('Pay',
                     style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
-                        color: AppTheme.secondaryColor)),
+                        color: AppTheme.saffron)),
               ],
             ),
             const SizedBox(height: 20),

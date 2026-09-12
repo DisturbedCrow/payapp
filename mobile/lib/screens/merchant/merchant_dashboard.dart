@@ -106,7 +106,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [Color(0xFF002970), Color(0xFF003DA5)],
+                      colors: [Color(0xFF283593), Color(0xFF3949AB)],
                     ),
                   ),
                   child: SafeArea(
@@ -119,7 +119,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                           Row(
                             children: [
                               const Text(
-                                'Pay',
+                                'Setu',
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w900,
@@ -127,11 +127,11 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                                 ),
                               ),
                               const Text(
-                                'tm',
+                                'Pay',
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w900,
-                                  color: AppTheme.paytmBlue,
+                                  color: AppTheme.saffron,
                                 ),
                               ),
                               const SizedBox(width: 6),

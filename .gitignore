@@ -19,3 +19,18 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Secrets — never commit
+.env
+backend/.env
+*.env.local
+
+# Local backend state
+backend/.venv/
+backend/offline_pay.db
+backend/test_security.db
+backend/keys/
+backend/ml_model/
+backend/demo/.sent_blobs.json
+__pycache__/
+*.pyc
