@@ -2,9 +2,13 @@
 //
 //   flutter test test/voice_intent_parser_test.dart
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:offline_pay/config/constants.dart';
+import 'package:offline_pay/screens/user/voice_confirm_screen.dart';
+import 'package:offline_pay/screens/user/voice_pay_sheet.dart';
 import 'package:offline_pay/services/voice_intent_parser.dart';
+import 'package:offline_pay/services/voice_service.dart';
 
 /// Resolves the parsed recipientQuery to a single contact id, or null.
 String? _resolveId(PayIntent intent) {
@@ -385,6 +389,177 @@ void main() {
 
     test('is symmetric', () {
       expect(levenshtein('ramesh', 'rmesh'), levenshtein('rmesh', 'ramesh'));
+    });
+  });
+
+  // ── Feature G plumbing: everything must degrade, never crash, when the
+  //    speech plugin is absent (which is exactly the case under `flutter
+  //    test`). These also serve as the compile gate for the UI files.
+  group('VoiceService degrades safely with no platform plugins', () {
+    test('init() returns false instead of throwing', () async {
+      final v = VoiceService();
+      expect(await v.init(), isFalse);
+      expect(v.isAvailable, isFalse);
+      expect(v.isListening, isFalse);
+    });
+
+    test('listenOnce() returns null, stop/cancel/dispose no-op', () async {
+      final v = VoiceService();
+      expect(await v.listenOnce(timeout: const Duration(milliseconds: 50)),
+          isNull);
+      expect(await v.listenAndParse(), isNull);
+      await v.stop();
+      await v.cancel();
+      v.dispose();
+      // Still usable after dispose — it is a singleton.
+      expect(v.partials, isNotNull);
+      expect(await v.listenOnce(), isNull);
+    });
+
+    test('partials stream survives dispose()', () async {
+      final v = VoiceService();
+      final first = v.partials;
+      v.dispose();
+      expect(v.partials, isNotNull);
+      expect(first, isNotNull);
+    });
+
+    test('loadRecentPayees() returns [] with no database', () async {
+      expect(await VoiceService().loadRecentPayees(), isEmpty);
+    });
+
+    test('showVoicePaySheet is a callable entry point', () {
+      expect(showVoicePaySheet, isA<Function>());
+    });
+  });
+
+  group('VoiceConfirmScreen renders', () {
+    Widget host(Widget child) => MaterialApp(home: child);
+
+    const ramesh = ResolvedRecipient(
+      id: rameshId,
+      name: 'Ramesh Kirana',
+      score: 1.0,
+    );
+    const vivek = ResolvedRecipient(
+      id: vivekId,
+      name: 'Vivek Sharma',
+      score: 0.7,
+    );
+
+    testWidgets('single match shows amount, payee and enabled Confirm',
+        (tester) async {
+      ResolvedRecipient? confirmed;
+      double? confirmedAmount;
+      await tester.pumpWidget(host(VoiceConfirmScreen(
+        intent: parse('ramesh ko do sau rupaye bhejo'),
+        matches: const [ramesh],
+        availableLimit: 5000,
+        onConfirm: (r, a) {
+          confirmed = r;
+          confirmedAmount = a;
+        },
+        onRerecord: () {},
+        onEdit: (_, __) {},
+      )));
+      await tester.pump();
+
+      expect(find.text('₹200'), findsOneWidget);
+      expect(find.text('Ramesh Kirana'), findsOneWidget);
+      expect(find.textContaining('do sau rupaye bhejo'), findsOneWidget);
+
+      await tester.tap(find.text('Confirm ₹200'));
+      await tester.pump();
+      expect(confirmed?.id, rameshId);
+      expect(confirmedAmount, 200);
+    });
+
+    testWidgets('over-limit shows the Hinglish error and blocks Confirm',
+        (tester) async {
+      var confirmedCalls = 0;
+      await tester.pumpWidget(host(VoiceConfirmScreen(
+        intent: parse('ramesh ko do hazaar bhejo'),
+        matches: const [ramesh],
+        availableLimit: 500,
+        onConfirm: (_, __) => confirmedCalls++,
+        onRerecord: () {},
+        onEdit: (_, __) {},
+      )));
+      await tester.pump();
+
+      expect(find.textContaining('Offline limit ke bahar'), findsOneWidget);
+      expect(find.textContaining('₹500 available'), findsOneWidget);
+      await tester.tap(find.text('Confirm ₹2000'));
+      await tester.pump();
+      expect(confirmedCalls, 0);
+    });
+
+    testWidgets('ambiguous matches show a picker that gates Confirm',
+        (tester) async {
+      ResolvedRecipient? confirmed;
+      await tester.pumpWidget(host(VoiceConfirmScreen(
+        intent: parse('do sau rupaye bhejo'),
+        matches: const [ramesh, vivek],
+        availableLimit: 5000,
+        onConfirm: (r, _) => confirmed = r,
+        onRerecord: () {},
+        onEdit: (_, __) {},
+      )));
+      await tester.pump();
+
+      expect(find.text('Kise bhejna hai?'), findsOneWidget);
+      await tester.tap(find.text('Confirm ₹200'));
+      await tester.pump();
+      expect(confirmed, isNull, reason: 'Confirm must be disabled');
+
+      await tester.tap(find.text('Vivek Sharma'));
+      await tester.pump();
+      await tester.tap(find.text('Confirm ₹200'));
+      await tester.pump();
+      expect(confirmed?.id, vivekId);
+    });
+
+    testWidgets('Re-record and Edit fire their callbacks', (tester) async {
+      var rerecords = 0;
+      double? editedAmount;
+      String? editedQuery;
+      await tester.pumpWidget(host(VoiceConfirmScreen(
+        intent: parse('ramesh ko do sau bhejo'),
+        matches: const [ramesh],
+        availableLimit: 5000,
+        onConfirm: (_, __) {},
+        onRerecord: () => rerecords++,
+        onEdit: (a, q) {
+          editedAmount = a;
+          editedQuery = q;
+        },
+      )));
+      await tester.pump();
+
+      await tester.tap(find.text('Re-record'));
+      await tester.pump();
+      expect(rerecords, 1);
+
+      await tester.tap(find.text('Edit'));
+      await tester.pump();
+      expect(editedAmount, 200);
+      expect(editedQuery, 'Ramesh Kirana');
+    });
+
+    testWidgets('no match falls back to the recent-payee picker',
+        (tester) async {
+      await tester.pumpWidget(host(VoiceConfirmScreen(
+        intent: parse('zzzz ko do sau bhejo'),
+        matches: const [],
+        availableLimit: 5000,
+        recentPayees: const [vivek],
+        onConfirm: (_, __) {},
+        onRerecord: () {},
+        onEdit: (_, __) {},
+      )));
+      await tester.pump();
+      expect(find.text('Recent payees'), findsOneWidget);
+      expect(find.text('Vivek Sharma'), findsOneWidget);
     });
   });
 

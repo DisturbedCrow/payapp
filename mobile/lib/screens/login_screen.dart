@@ -233,7 +233,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'User: alice@demo.com / password123\nMerchant: shopkeeper@demo.com / password123',
+                        'Sender: vivek@demo.com / password123\nReceiver: ramesh@demo.com / password123',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade700,

@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/wallet_provider.dart';
 import '../providers/transaction_provider.dart';
+import 'dart:async';
+
 import '../services/sync_engine.dart';
+import '../services/device_ed25519_service.dart';
 import '../services/security/security_manager.dart';
 import '../services/security/app_update_service.dart';
 import 'user/user_dashboard.dart';
@@ -47,6 +50,15 @@ class HomeScreenState extends State<HomeScreen> {
     // Load local transactions
     await txProvider.loadLocalTransactions(userId: auth.user?.id);
 
+    // Feature B: register the Ed25519 public key with the backend.
+    // Fire-and-forget — it returns false when offline and the SyncEngine
+    // retries on the next successful sync, so a phone that first launches in
+    // airplane mode still ends up with a registered trust root.
+    final userId = auth.user?.id;
+    if (userId != null) {
+      unawaited(DeviceEd25519Service().registerWithBackend(userId));
+    }
+
     // Initialize security layer (device keys, integrity check, registration)
     final secResult = await SecurityManager().initialize();
     if (!secResult.isDeviceSecure) {
@@ -62,6 +74,7 @@ class HomeScreenState extends State<HomeScreen> {
 
     // Start background sync (existing token-based + new blob-based)
     txProvider.startSync();
+    SyncEngine().currentUserId = userId;
     SyncEngine().start();
 
     // If online, request fresh tokens

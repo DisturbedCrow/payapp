@@ -9,6 +9,7 @@ import '../../widgets/transaction_tile.dart';
 import '../../config/theme.dart';
 import '../home_screen.dart';
 import '../receive_scan_screen.dart';
+import 'pay_screen.dart';
 import '../show_qr_screen.dart';
 import 'risk_profile_screen.dart';
 
@@ -568,6 +569,36 @@ class _UserDashboardState extends State<UserDashboard> {
             ],
           ),
           ),  // RefreshIndicator
+
+          // ── Pay by voice — the stage centrepiece ───────────────────
+          // Sits above the QR row so it is the first thing a judge sees.
+          if (AppConstants.voicePayEnabled)
+            Positioned(
+              bottom: 84,
+              right: 24,
+              child: FloatingActionButton.extended(
+                heroTag: 'voicePayFab',
+                backgroundColor: AppTheme.saffron,
+                foregroundColor: Colors.white,
+                icon: const Icon(Icons.mic),
+                label: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'बोलकर भेजें • Pay by Voice',
+                    maxLines: 1,
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
+                ),
+                onPressed: () {
+                  // Hand off to the Pay tab, which owns the payment machinery,
+                  // and have it open the mic straight away — one tap on stage.
+                  PayScreen.autoStartVoice = true;
+                  context
+                      .findAncestorStateOfType<HomeScreenState>()
+                      ?.setTab(1);
+                },
+              ),
+            ),
 
           // ── Floating action buttons ────────────────────────────────
           Positioned(

@@ -104,4 +104,58 @@ void main() {
       expect(testVectorBlob().toJson().containsKey('sender_public_key'), isFalse);
     });
   });
+
+
+  // ── Feature B: the v1 Ed25519 canonical payload ──────────────────────
+  //
+  // Shared vector. The Python side asserts the identical string in
+  // backend/app/services/signing.py (TEST_VECTOR_V1_CANONICAL) and
+  // backend/tests/test_signing_v1.py.
+  group('canonicalPayloadV1', () {
+    const expected =
+        'v1|sender-abc|receiver-xyz|250.00|2026-09-13T10:00:00Z|nonce-0001';
+
+    PaymentBlob vectorBlob({DateTime? timestamp}) => PaymentBlob(
+          id: '11111111-2222-3333-4444-555555555555',
+          senderId: 'sender-abc',
+          receiverId: 'receiver-xyz',
+          amount: 250.0,
+          timestamp: timestamp ?? DateTime.utc(2026, 9, 13, 10, 0, 0),
+          nonce: 'nonce-0001',
+          isOffline: true,
+          offlineLimitAtTime: 5000,
+        );
+
+    test('matches the shared cross-language vector', () {
+      expect(canonicalPayloadV1(vectorBlob()), expected);
+    });
+
+    test('the blob id is deliberately NOT covered', () {
+      final other = vectorBlob().copyWith();
+      expect(canonicalPayloadV1(other), canonicalPayloadV1(vectorBlob()));
+    });
+
+    test('sub-second precision is truncated, not rounded', () {
+      // Dart emits ms (sometimes µs); the server truncates to whole seconds,
+      // so anything finer must not change the signed string.
+      final withMillis = vectorBlob(
+        timestamp: DateTime.utc(2026, 9, 13, 10, 0, 0, 999, 999),
+      );
+      expect(canonicalPayloadV1(withMillis), expected);
+    });
+
+    test('a local-time timestamp is converted to UTC', () {
+      final local = DateTime.utc(2026, 9, 13, 10, 0, 0).toLocal();
+      expect(canonicalPayloadV1(vectorBlob(timestamp: local)), expected);
+    });
+
+    test('amount always carries exactly two decimals', () {
+      final whole = PaymentBlob(
+        id: 'i', senderId: 's', receiverId: 'r', amount: 200,
+        timestamp: DateTime.utc(2026, 1, 1), nonce: 'n',
+        isOffline: true, offlineLimitAtTime: 0,
+      );
+      expect(canonicalPayloadV1(whole), contains('|200.00|'));
+    });
+  });
 }

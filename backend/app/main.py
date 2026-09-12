@@ -13,6 +13,7 @@ from .routes import (
     explain_routes,
     ops_routes,
     contact_routes,
+    ai_routes,
 )
 from .auth import get_current_user
 from .models import User
@@ -42,6 +43,7 @@ app.include_router(device_routes.router)
 app.include_router(explain_routes.router)
 app.include_router(ops_routes.router)
 app.include_router(contact_routes.router)
+app.include_router(ai_routes.router)
 
 
 @app.on_event("startup")

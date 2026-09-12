@@ -14,6 +14,10 @@ Run this **the night before AND 30 minutes before the demo**, on *both* phones.
 ### Both phones
 - [ ] Latest `demo-day` APK installed
       (`adb install -r mobile/SetuPay-demo-day.apk`)
+      Built with the laptop's LAN address baked in:
+      `flutter build apk --release --target-platform android-arm64 \
+         --dart-define=API_URL=http://<laptop-ip>:8000`
+      **Rebuild if the venue gives the laptop a different IP.**
 - [ ] Logged in — **Phone A = `vivek@demo.com`**, **Phone B = `ramesh@demo.com`**,
       both `password123`
 - [ ] Device key registered: make one online test payment and confirm the ops
@@ -27,8 +31,17 @@ Run this **the night before AND 30 minutes before the demo**, on *both* phones.
 ### Phone A (sender) only
 - [ ] **Hindi on-device speech pack downloaded.** This is the #1 way voice
       silently dies on stage.
-      Settings → System → Languages & input → On-device speech recognition →
-      add **हिन्दी (भारत)**. On non-Pixel phones it's the Gboard voice pack.
+      On this OnePlus the recogniser is Google TTS/Speech Services:
+      **Settings → Google → All services → Search, Assistant & Voice → Voice →
+      Offline speech recognition → download हिन्दी (भारत)**.
+      (On a Pixel it lives under Settings → System → Languages & input →
+      On-device speech recognition.)
+      *Verified on the demo phone:* the recogniser IS reachable from the app
+      (package-visibility entry is in the manifest) — only the language pack
+      is a manual step.
+- [ ] **With hi_IN, Google returns Devanagari, not romanised Hinglish.** The
+      parser handles both; nothing to do, but don't be alarmed if the live
+      transcript reads "रमेश को दो सौ रुपये भेजो".
 - [ ] Tap the mic once in the app and say anything — confirm a partial
       transcript appears. Do this **in the venue**, not just at home.
 - [ ] Mic + camera permissions already granted (so no permission dialog appears

@@ -22,24 +22,27 @@ pubspec.lock
 *.jks
 *.keystore
 
-# iOS
-ios/
+# iOS — the platform folder IS tracked (Info.plist carries the display name
+# and the usage strings); only generated output and dependencies are ignored.
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/.generated/
+**/ios/**/xcuserdata/
 **/ios/**/*.mode1v3
 **/ios/**/*.mode2v3
 **/ios/**/*.moved-aside
 **/ios/**/*.pbxuser
 **/ios/**/*.perspectivev3
-**/ios/**xcuserdata/
-**/ios/.generated/
-**/ios/Flutter/.last_build_id
-**/ios/Flutter/App.framework
-**/ios/Flutter/Flutter.framework
-**/ios/Flutter/Flutter.podspec
-**/ios/Flutter/Generated.xcconfig
-**/ios/Flutter/ephemeral/
-**/ios/Flutter/app.flx
-**/ios/Flutter/app.zip
-**/ios/Flutter/flutter_assets/
 **/ios/ServiceDefinitions.json
 **/ios/Runner/GeneratedPluginRegistrant.*
 
@@ -74,3 +77,8 @@ Thumbs.db
 
 # Kotlin compiler session files
 **/android/.kotlin/
+
+# Built demo APK — regenerate with scripts/build_release.sh
+SetuPay-demo-day.apk
+*.apk
+*.ipa
