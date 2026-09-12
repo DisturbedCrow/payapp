@@ -7,6 +7,7 @@ import '../services/ble_service.dart';
 import '../models/payment_blob.dart';
 import '../providers/transaction_provider.dart';
 import '../providers/auth_provider.dart';
+import '../config/constants.dart';
 import '../config/theme.dart';
 
 /// Universal receive-QR screen.
@@ -97,7 +98,7 @@ class _ShowQRScreenState extends State<ShowQRScreen> {
       bleUuid: _bleUuid,
     );
     final upiHandle = widget.userEmail != null
-        ? '${widget.userEmail!.split('@').first}@paytm'
+        ? '${widget.userEmail!.split('@').first}${AppConstants.upiSuffix}'
         : null;
 
     return Scaffold(
@@ -131,21 +132,21 @@ class _ShowQRScreenState extends State<ShowQRScreen> {
               ),
               child: Column(
                 children: [
-                  // Paytm UPI header
+                  // SetuPay UPI header
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: const [
-                      Text('Pay',
+                      Text('Setu',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
                             color: AppTheme.primaryColor,
                           )),
-                      Text('tm',
+                      Text('Pay',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
-                            color: AppTheme.secondaryColor,
+                            color: AppTheme.saffron,
                           )),
                       SizedBox(width: 6),
                       Text('UPI',

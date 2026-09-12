@@ -2,19 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Paytm palette
-  static const Color navyBlue    = Color(0xFF002970);
-  static const Color paytmBlue   = Color(0xFF00B9F1);
-  static const Color lightBlue   = Color(0xFFE8F4FD);
-  static const Color yellow      = Color(0xFFFFD700);
+  // SetuPay palette — deep indigo + saffron.
+  // "setu" = bridge: we bridge the offline gap rather than clone a wallet.
+  static const Color navyBlue    = Color(0xFF283593); // deep indigo (primary)
+  static const Color paytmBlue   = Color(0xFF5C6BC0); // indigo 400 (secondary)
+  static const Color lightBlue   = Color(0xFFF2F3FA); // near-white indigo tint
+  static const Color saffron     = Color(0xFFFF9933); // accent
+  static const Color yellow      = Color(0xFFFFC107);
   static const Color green       = Color(0xFF4CAF50);
   static const Color orange      = Color(0xFFFF9800);
   static const Color red         = Color(0xFFE53935);
 
-  // Legacy aliases so existing code keeps compiling unchanged
+  // Legacy aliases so existing code keeps compiling unchanged.
+  // `paytmBlue` is kept as a NAME only — the value is now indigo. Renaming it
+  // would touch ~30 call sites for no visual gain.
   static const Color primaryColor   = navyBlue;
   static const Color secondaryColor = paytmBlue;
-  static const Color accentColor    = Color(0xFF7C4DFF);
+  static const Color accentColor    = saffron;
   static const Color successColor   = green;
   static const Color warningColor   = orange;
   static const Color errorColor     = red;

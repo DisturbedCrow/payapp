@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../config/constants.dart';
 import '../providers/auth_provider.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -63,12 +64,12 @@ class _SplashScreenState extends State<SplashScreen>
               children: [
                 ShaderMask(
                   shaderCallback: (bounds) => const LinearGradient(
-                    colors: [Color(0xFF002970), Color(0xFF00B9F1)],
+                    colors: [Color(0xFF283593), Color(0xFFFF9933)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ).createShader(bounds),
                   child: const Text(
-                    'Paytm',
+                    AppConstants.appName,
                     style: TextStyle(
                       fontSize: 60,
                       fontWeight: FontWeight.w900,
@@ -79,11 +80,11 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  '— से UPI —',
+                  '— सेतु · offline UPI —',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF002970),
+                    color: Color(0xFF283593),
                     letterSpacing: 1,
                   ),
                 ),

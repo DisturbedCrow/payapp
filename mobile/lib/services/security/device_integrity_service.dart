@@ -220,7 +220,7 @@ class DeviceIntegrityService {
     try {
       final socket = await Socket.connect('127.0.0.1', 27042,
           timeout: const Duration(milliseconds: 500));
-      await socket.destroy();
+      socket.destroy();  // destroy() returns void — awaiting it is a type error
       findings.add('FRIDA_PORT_27042_OPEN');
       score += 0.5;
     } catch (_) {
@@ -404,7 +404,7 @@ class DeviceIntegrityService {
     try {
       final socket = await Socket.connect('127.0.0.1', 27042,
           timeout: const Duration(milliseconds: 500));
-      await socket.destroy();
+      socket.destroy();  // destroy() returns void — awaiting it is a type error
       findings.add('FRIDA_PORT_27042_OPEN');
       score += 0.5;
     } catch (_) {}

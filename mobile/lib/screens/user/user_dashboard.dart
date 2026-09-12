@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../config/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/transaction_provider.dart';
@@ -104,7 +105,7 @@ class _UserDashboardState extends State<UserDashboard> {
                           ),
                         ),
                         const Spacer(),
-                        // Paytm UPI logo
+                        // SetuPay UPI logo
                         Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -112,7 +113,7 @@ class _UserDashboardState extends State<UserDashboard> {
                               text: const TextSpan(
                                 children: [
                                   TextSpan(
-                                    text: 'Pay',
+                                    text: 'Setu',
                                     style: TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.w900,
@@ -120,18 +121,18 @@ class _UserDashboardState extends State<UserDashboard> {
                                     ),
                                   ),
                                   TextSpan(
-                                    text: 'tm',
+                                    text: 'Pay',
                                     style: TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.w900,
-                                      color: AppTheme.paytmBlue,
+                                      color: AppTheme.saffron,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                             const Text(
-                              '—से UPI—',
+                              '—सेतु · offline UPI—',
                               style: TextStyle(
                                 fontSize: 8,
                                 fontWeight: FontWeight.w700,
@@ -270,7 +271,7 @@ class _UserDashboardState extends State<UserDashboard> {
                     ),
                     const SizedBox(height: 10),
 
-                    // ── My Paytm ─────────────────────────────────────
+                    // ── My SetuPay ───────────────────────────────────
                     _SectionCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -278,7 +279,7 @@ class _UserDashboardState extends State<UserDashboard> {
                           Row(
                             children: [
                               const Text(
-                                'My Paytm',
+                                'My SetuPay',
                                 style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w700,
@@ -287,7 +288,7 @@ class _UserDashboardState extends State<UserDashboard> {
                               ),
                               const Spacer(),
                               Text(
-                                '${user?.email.split('@').first ?? 'user'}@paytm',
+                                '${user?.email.split('@').first ?? 'user'}${AppConstants.upiSuffix}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey.shade600,
@@ -328,14 +329,14 @@ class _UserDashboardState extends State<UserDashboard> {
                           ),
                           const SizedBox(height: 16),
 
-                          // My Paytm items grid
+                          // My SetuPay items grid
                           Row(
                             mainAxisAlignment:
                                 MainAxisAlignment.spaceAround,
                             children: [
                               _GridItem(
                                 icon: Icons.account_balance_wallet,
-                                label: 'Paytm Wallet',
+                                label: 'SetuPay Wallet',
                                 color: AppTheme.navyBlue,
                                 onTap: () => context
                                     .findAncestorStateOfType<HomeScreenState>()
