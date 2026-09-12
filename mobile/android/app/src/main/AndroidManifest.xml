@@ -63,5 +63,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Android 11+ package visibility. Without this,
+             SpeechRecognizer.isRecognitionAvailable() returns false and voice
+             payments silently fall back to typing — RECORD_AUDIO alone is not
+             enough, and the speech_to_text plugin ships an empty manifest. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
     </queries>
 </manifest>

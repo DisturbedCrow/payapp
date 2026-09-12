@@ -28,6 +28,7 @@ class OfflineStorage {
         version: AppConstants.dbVersion,
         onCreate: _createTables,
         onUpgrade: _onUpgrade,
+        onOpen: _ensureLateColumns,
       );
     }
     
@@ -44,7 +45,34 @@ class OfflineStorage {
       version: AppConstants.dbVersion,
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
+      onOpen: _ensureLateColumns,
     );
+  }
+
+  /// Columns added after a version was first shipped.
+  ///
+  /// `onUpgrade` only fires when the recorded version CHANGES. An interim
+  /// build can create the database at the current version with an older
+  /// schema — then the upgrade never runs and every insert fails with
+  /// "no column named ...". Applying the ALTERs on every open, guarded, is
+  /// cheap and immune to whatever state a demo phone is already in.
+  ///
+  /// PROD-TODO: replace with a real migration framework (e.g. drift) that
+  /// records applied migrations rather than inferring them.
+  static const List<List<String>> _lateColumns = [
+    ['payment_blobs', 'handoff_method', 'TEXT'],
+    ['payment_blobs', 'direction', "TEXT DEFAULT 'sent'"],
+    ['payment_blobs', 'sender_public_key', 'TEXT'],
+  ];
+
+  Future<void> _ensureLateColumns(Database db) async {
+    for (final col in _lateColumns) {
+      try {
+        await db.execute('ALTER TABLE ${col[0]} ADD COLUMN ${col[1]} ${col[2]}');
+      } catch (_) {
+        // Already present — the expected case on every open after the first.
+      }
+    }
   }
 
   Future<void> _createTables(Database db, int version) async {

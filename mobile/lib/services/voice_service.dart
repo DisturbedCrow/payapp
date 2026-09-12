@@ -69,8 +69,10 @@ class VoiceService {
       _lastError = 'Voice payments are disabled';
       return false;
     }
-    if (_initialised) return _available;
-    _initialised = true;
+    // Only a SUCCESSFUL init is latched. A one-off "Deny" on the permission
+    // dialog must not disable the mic for the rest of the session — the next
+    // tap re-prompts.
+    if (_initialised && _available) return true;
 
     try {
       if (!await _ensureMicPermission()) {
@@ -91,6 +93,7 @@ class VoiceService {
 
       _activeLocaleId = await _pickLocale();
       _lastError = null;
+      _initialised = true;
       return true;
     } catch (e) {
       // MissingPluginException in tests, or any platform-side failure.
@@ -164,14 +167,18 @@ class VoiceService {
     }
 
     // Safety net: some Android recognisers neither deliver a final result nor
-    // a terminal status. Fall back to the newest partial.
+    // a terminal status. Fall back to the newest partial. Only armed if the
+    // session is still open — an immediate onError may already have closed it.
     _hardStop?.cancel();
-    _hardStop = Timer(maxListen + const Duration(seconds: 2), () async {
-      try {
-        await _speech.stop();
-      } catch (_) {/* ignore */}
-      finish(_lastTranscript);
-    });
+    _hardStop = null;
+    if (!completer.isCompleted) {
+      _hardStop = Timer(maxListen + const Duration(seconds: 2), () async {
+        try {
+          await _speech.stop();
+        } catch (_) {/* ignore */}
+        finish(_lastTranscript);
+      });
+    }
 
     final result = await completer.future;
     _onFinal = null;
@@ -330,10 +337,20 @@ class VoiceService {
   }
 
   void _onStatus(String status) {
-    // 'done' / 'notListening' are the terminal states. Android sometimes
-    // reaches them without ever sending a final result, so resolve with the
-    // newest partial rather than hanging the sheet.
-    if (status == 'done' || status == 'notListening') {
+    if (status == SpeechToText.notListeningStatus) {
+      // Speech has ENDED but the result is not in yet. The plugin now arms its
+      // own `finalTimeout` (2s) window, during which the engine usually
+      // delivers the full final transcript — and only then emits 'done'.
+      // Completing here would truncate the utterance to whatever partial was
+      // current at end-of-speech ("ramesh ko do" → ₹2), so we only stop the
+      // spinner and wait.
+      _listening = false;
+      return;
+    }
+    if (status == SpeechToText.doneStatus) {
+      // Genuinely terminal. Some Android recognisers get here without ever
+      // sending a final result, so fall back to the newest partial rather
+      // than hanging the sheet.
       _listening = false;
       final f = _onFinal;
       if (f != null) f(_lastTranscript);

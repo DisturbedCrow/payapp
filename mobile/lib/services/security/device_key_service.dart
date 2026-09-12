@@ -62,8 +62,22 @@ class DeviceKeyService {
     }
 
     try {
+      // ECDSA needs a random `k` per signature. Initialising the signer with
+      // a bare PrivateKeyParameter makes PointyCastle resolve a SecureRandom
+      // through its dynamic registry, which the AOT compiler tree-shakes away
+      // in a real build — on device that throws
+      // "RegistryFactoryException: No algorithm registered of type
+      // SecureRandom with name:" and every blob silently falls back to the
+      // placeholder signature. Constructing FortunaRandom ourselves keeps the
+      // registry out of the path entirely.
       final signer = ECDSASigner(SHA256Digest(), null)
-        ..init(true, PrivateKeyParameter<ECPrivateKey>(privateKey));
+        ..init(
+          true,
+          ParametersWithRandom(
+            PrivateKeyParameter<ECPrivateKey>(privateKey),
+            _secureRandom(),
+          ),
+        );
 
       final sig = signer.generateSignature(data) as ECSignature;
       return _derEncodeSignature(sig);

@@ -16,14 +16,23 @@ import '../../services/offline_queue_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/api_service.dart';
 import '../../services/ble_service.dart';
+import '../../services/voice_intent_parser.dart';
+import '../../services/voice_service.dart';
 import '../../services/security/device_key_service.dart';
 import '../../config/constants.dart';
 import '../../config/theme.dart';
 import '../payment_receipt_screen.dart';
+import 'voice_confirm_screen.dart';
+import 'voice_pay_sheet.dart';
 import '../qr_handoff_screen.dart';
 
 class PayScreen extends StatefulWidget {
   const PayScreen({super.key});
+
+  /// Set by the dashboard's mic FAB just before it switches to the Pay tab,
+  /// so voice capture opens immediately instead of making the presenter tap
+  /// twice on stage. Consumed (and cleared) once by [_PayScreenState].
+  static bool autoStartVoice = false;
 
   @override
   State<PayScreen> createState() => _PayScreenState();
@@ -46,6 +55,82 @@ class _PayScreenState extends State<PayScreen> {
   final _queueService = OfflineQueueService();
   final _connectivityService = ConnectivityService();
   final _bleService = BLEService();
+
+  @override
+  void initState() {
+    super.initState();
+    if (AppConstants.voicePayEnabled && PayScreen.autoStartVoice) {
+      PayScreen.autoStartVoice = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) => startVoicePay());
+    }
+  }
+
+  // ── Voice payments (Feature G) ───────────────────────────────
+  //
+  // Voice is an INPUT LAYER on top of the existing flow: it only ever fills in
+  // (receiver, amount) and then calls the same _processOfflinePayment /
+  // _processOnlinePayment the manual path uses. There is deliberately no
+  // parallel payment path to keep the demo and the audit surface honest.
+
+  /// Mic → listen → parse → resolve → confirm → the existing pay flow.
+  Future<void> startVoicePay() async {
+    if (!AppConstants.voicePayEnabled) return;
+
+    final intent = await showVoicePaySheet(context);
+    if (!mounted || intent == null) return; // cancelled, or "Type instead"
+
+    final recent = await VoiceService().loadRecentPayees();
+    final matches = intent.recipientQuery == null
+        ? const <ResolvedRecipient>[]
+        : resolveRecipient(intent.recipientQuery!, recent: recent);
+    final limit = await _limitService.getAvailableLimit();
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => VoiceConfirmScreen(
+          intent: intent,
+          matches: matches,
+          availableLimit: limit,
+          recentPayees: recent
+              .map((p) => ResolvedRecipient(id: p.id, name: p.name, score: 0))
+              .toList(),
+          onConfirm: (recipient, amount) {
+            Navigator.of(ctx).pop();
+            _payResolvedRecipient(recipient, amount);
+          },
+          onRerecord: () {
+            Navigator.of(ctx).pop();
+            startVoicePay();
+          },
+          onEdit: (amount, recipientQuery) {
+            Navigator.of(ctx).pop();
+            // Drop the user into the normal flow with what we understood.
+            if (amount != null) _scanAmountCtrl.text = amount.toStringAsFixed(0);
+            setState(() => _error =
+                'Scan the receiver\'s QR to finish paying'
+                '${recipientQuery != null ? ' $recipientQuery' : ''}.');
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Hands a voice-resolved payee to the SAME code path the QR scanner uses.
+  Future<void> _payResolvedRecipient(
+    ResolvedRecipient recipient,
+    double amount,
+  ) async {
+    final receiver = ReceiverQRData(
+      receiverId: recipient.id,
+      receiverName: recipient.name,
+    );
+    _scanAmountCtrl.text = amount.toStringAsFixed(
+      amount == amount.roundToDouble() ? 0 : 2,
+    );
+    setState(() => _scannedReceiver = receiver);
+    await _processOfflinePayment(receiver);
+  }
 
   @override
   void dispose() {
@@ -823,6 +908,40 @@ class _PayScreenState extends State<PayScreen> {
                   ),
                   const SizedBox(height: 16),
 
+                  // ── Pay by voice — the stage centrepiece ────────
+                  if (AppConstants.voicePayEnabled && !_isScanning) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: ElevatedButton.icon(
+                        onPressed: _isProcessing ? null : startVoicePay,
+                        icon: const Icon(Icons.mic, size: 22),
+                        label: const Text(
+                          'बोलकर भेजें  •  Pay by Voice',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w700),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.saffron,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        'Works in airplane mode',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey.shade500),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Scanner view
                   if (_isScanning) ...[
                     ClipRRect(
@@ -1163,31 +1282,42 @@ class _TokenQRSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Icon(Icons.qr_code, color: AppTheme.primaryColor, size: 20),
               const SizedBox(width: 8),
-              const Text(
-                'Generate Token QR',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.primaryColor,
+              const Flexible(
+                child: Text(
+                  'Generate Token QR',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.primaryColor,
+                  ),
                 ),
               ),
-              const Spacer(),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppTheme.lightBlue,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'Merchant scans you',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryColor,
+              const SizedBox(width: 8),
+              // Flexible, not Spacer + fixed Container: at 1080p the badge
+              // overflowed the row by 19px and Flutter painted the yellow
+              // "RIGHT OVERFLOWED" stripes right where judges are looking.
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.lightBlue,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Merchant scans you',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primaryColor,
+                    ),
                   ),
                 ),
               ),
