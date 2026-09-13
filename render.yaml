@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: offlinepay-api
+    name: setupay-api
     runtime: python
     region: singapore
     plan: free

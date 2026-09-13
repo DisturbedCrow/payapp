@@ -28,7 +28,7 @@ build_android() {
         --release \
         --obfuscate \
         --split-debug-info="$DEBUG_INFO_DIR/android" \
-        --dart-define=API_URL=https://offlinepay-api.onrender.com \
+        --dart-define=API_URL=https://setupay-api.onrender.com \
         --shrink \
         --tree-shake-icons
     echo "APK: $PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
@@ -42,7 +42,7 @@ build_ios() {
         --release \
         --obfuscate \
         --split-debug-info="$DEBUG_INFO_DIR/ios" \
-        --dart-define=API_URL=https://offlinepay-api.onrender.com
+        --dart-define=API_URL=https://setupay-api.onrender.com
     echo "IPA: $PROJECT_DIR/build/ios/ipa/"
     echo "Debug symbols: $DEBUG_INFO_DIR/ios/"
 }

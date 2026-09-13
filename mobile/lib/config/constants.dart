@@ -33,7 +33,7 @@ class AppConstants {
   /// the tunnel restarts.
   static const String publicApiUrl = String.fromEnvironment(
     'PUBLIC_API_URL',
-    defaultValue: 'https://pichunter-commentary-arbitrary-extraordinary.trycloudflare.com',
+    defaultValue: 'https://setupay-api.onrender.com',
   );
 
   /// Same-LAN laptop addresses. Fast when they apply, skipped in ~4s when
