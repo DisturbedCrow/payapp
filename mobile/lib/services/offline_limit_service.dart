@@ -39,6 +39,12 @@ class OfflineLimitService {
   /// dashboard's "from server · Ns ago" label.
   final ValueNotifier<DateTime?> lastSyncAt = ValueNotifier<DateTime?>(null);
 
+  /// Bumped on every write to the cached limit or its remaining balance, so
+  /// screens can repaint without polling. A sync saves the server's limit
+  /// AFTER the edge engine has already repriced, so listening to the engine
+  /// alone left the dashboard showing the offline number once back online.
+  final ValueNotifier<int> limitChanged = ValueNotifier<int>(0);
+
   // ── Public API ────────────────────────────────────────────────
 
   /// Returns the currently available offline limit.
@@ -70,6 +76,7 @@ class OfflineLimitService {
     final current = prefs.getDouble(_keyRemaining) ?? 0.0;
     final updated = (current - amount).clamp(0.0, double.infinity);
     await prefs.setDouble(_keyRemaining, updated);
+    limitChanged.value++;
   }
 
   /// Fetches the limit from the backend and caches it locally.
@@ -113,6 +120,7 @@ class OfflineLimitService {
   Future<void> updateRemainingOnly(double remaining) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_keyRemaining, remaining);
+    limitChanged.value++;
   }
 
   /// Applies a local risk penalty to the remaining limit based on how many
@@ -135,6 +143,7 @@ class OfflineLimitService {
     // Only reduce, never increase the remaining limit
     final adjusted = remaining.clamp(0.0, penalizedCap);
     await prefs.setDouble(_keyRemaining, adjusted);
+    limitChanged.value++;
   }
 
   /// Resets remaining limit back to total (e.g. after all blobs are settled).
@@ -142,6 +151,7 @@ class OfflineLimitService {
     final prefs = await SharedPreferences.getInstance();
     final total = prefs.getDouble(_keyLimit) ?? 0.0;
     await prefs.setDouble(_keyRemaining, total);
+    limitChanged.value++;
   }
 
   // ── Feature I: edge-model context ─────────────────────────────
@@ -230,6 +240,7 @@ class OfflineLimitService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_keyLimit, limit);
     await prefs.setDouble(_keyRemaining, limit);
+    limitChanged.value++;
     await prefs.setString(_keyExpiry, expiry.toIso8601String());
     await markSynced();
   }

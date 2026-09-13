@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../ml/edge_limit_engine.dart';
+import '../../services/offline_limit_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../widgets/edge_limit_source_label.dart';
 import '../../widgets/edge_model_feed_sheet.dart';
@@ -37,6 +38,8 @@ class _UserDashboardState extends State<UserDashboard> {
     // Feature I2: whenever the on-device engine reprices (a payment, a sync,
     // this dashboard), repaint the badge from the rewritten limit.
     _edge.latest.addListener(_onEdgeReprice);
+    // A sync writes the server limit after the engine ran: repaint then too.
+    OfflineLimitService().limitChanged.addListener(_onEdgeReprice);
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _repriceIfOffline('dashboard'));
   }
@@ -44,6 +47,7 @@ class _UserDashboardState extends State<UserDashboard> {
   @override
   void dispose() {
     _edge.latest.removeListener(_onEdgeReprice);
+    OfflineLimitService().limitChanged.removeListener(_onEdgeReprice);
     super.dispose();
   }
 
