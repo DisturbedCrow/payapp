@@ -34,8 +34,11 @@
     padding:18px 28px; border-bottom:1px solid var(--line);
     background:var(--panel2);
   }
-  .brand{font-size:34px; font-weight:800; letter-spacing:-.5px; white-space:nowrap}
+  .brandwrap{display:flex; flex-direction:column; gap:5px}
+  .brand{font-size:34px; font-weight:800; letter-spacing:-.5px; white-space:nowrap; line-height:1}
   .brand .accent{color:var(--saffron)}
+  .tagline{font-size:14px; letter-spacing:1.2px; color:var(--dim); white-space:nowrap}
+  .tagline b{color:var(--ink); font-weight:600}
   .conn{display:flex; align-items:center; gap:9px; font-size:17px; color:var(--dim)}
   .dot{width:12px;height:12px;border-radius:50%;background:var(--green);
        box-shadow:0 0 12px var(--green)}
@@ -83,6 +86,17 @@
   .verdict{font-size:14px; font-weight:800; letter-spacing:1.4px; min-width:96px; text-align:right}
   .verdict.ok{color:var(--green)} .verdict.no{color:var(--red)}
   .verdict.warn{color:var(--amber)} .verdict.info{color:var(--indigo)}
+  .verdict.muted{color:#5d6b90}
+  /* ── Voice rows ────────────────────────────────────── */
+  .row.voice{border-left-color:var(--saffron)}
+  .row.voice.fallback{border-left-color:#3a4566}
+  .vmeta{color:var(--dim); font-weight:400}
+  .vsub{display:block; margin-top:2px; font-size:14px; font-weight:400; color:#5d6b90}
+  .pill{font-size:12px; font-weight:600; letter-spacing:.5px; white-space:nowrap;
+        border-radius:999px; padding:3px 10px}
+  .pill.gnani{color:#c9d1ff; border:1px solid rgba(107,125,255,.5); background:rgba(107,125,255,.12)}
+  .pill.mock{color:var(--amber); border:1px solid rgba(255,176,32,.45); background:rgba(255,176,32,.1);
+             text-transform:uppercase; letter-spacing:1.2px}
   /* ── Trust engine ──────────────────────────────────── */
   .user{margin-bottom:20px}
   .user .top{display:flex; align-items:baseline; gap:10px; margin-bottom:7px}
@@ -111,7 +125,10 @@
 <div id="toast"></div>
 
 <header>
-  <div class="brand">Setu<span class="accent">Pay</span> Live</div>
+  <div class="brandwrap">
+    <div class="brand">Setu<span class="accent">Pay</span> Live</div>
+    <div class="tagline">powered by the <b>Vishwas Engine</b></div>
+  </div>
   <div class="conn" id="conn"><span class="dot"></span><span id="connText">online</span></div>
   <div class="stats">
     <div class="stat"><div class="k">₹ Settled</div><div class="v green" id="sSettled">0</div></div>
@@ -124,6 +141,7 @@
   <span class="chip">signatures <b id="mSig">—</b></span>
   <span class="chip">explainer <b id="mExp">—</b></span>
   <span class="chip">demo mode <b id="mDemo">—</b></span>
+  <span class="chip">voice <b id="mVoice">—</b></span>
 </div>
 
 <main>
@@ -247,6 +265,48 @@
     }
   }
 
+  // ── Voice payments (Feature H1/H4) ────────────────────
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+    });
+  }
+
+  function addVoiceRow(e) {
+    var feed = $('feed');
+    clearEmpty(feed);
+
+    var ok = e.ok !== false;
+    var pill = e.provider === 'gnani'
+      ? '<span class="pill gnani">Powered by Gnani Prisma</span>'
+      : '<span class="pill mock">mock</span>';
+    var sub = esc(e.user || '') + (ok ? '' : (e.user ? ' · ' : '') + 'fallback to on-device');
+
+    var row = document.createElement('div');
+    row.className = 'row new voice' + (ok ? '' : ' fallback');
+    row.innerHTML =
+      '<span class="t">' + hhmmss(e.ts) + '</span>' +
+      '<span class="who">🎙 Voice payment heard' +
+        '<span class="vmeta"> · ' + esc(e.lang) + ' · ' +
+          Number(e.latency_ms || 0).toLocaleString('en-IN') + ' ms</span>' +
+        (sub ? '<span class="vsub">' + sub + '</span>' : '') +
+      '</span>' +
+      pill +
+      (ok && e.amount ? '<span class="amt">' + inr(e.amount) + '</span>'
+                      : '<span class="amt"></span>') +
+      '<span class="verdict ' + (ok ? 'info' : 'muted') + '">' +
+        (ok ? 'HEARD' : 'FALLBACK') + '</span>';
+
+    feed.insertBefore(row, feed.firstChild);
+    while (feed.children.length > MAX_ROWS) {
+      var dropped = feed.lastChild;
+      feed.removeChild(dropped);
+      for (var k in rowsByBlob) {
+        if (rowsByBlob[k] === dropped) delete rowsByBlob[k];
+      }
+    }
+  }
+
   // ── Threats column ────────────────────────────────────
   var RULE_LABEL = {
     replay:     '🚫 Replay attack blocked',
@@ -324,7 +384,8 @@
 
         var bumped = {};
         (d.events || []).forEach(function (e) {
-          addFeedRow(e);
+          if (e.kind === 'voice_transcribed') addVoiceRow(e);
+          else addFeedRow(e);
           if (e.kind === 'fraud_flag') addThreat(e);
           if (e.kind === 'limit_changed') bumped[e.user] = true;
         });
@@ -341,6 +402,7 @@
           $('mSig').textContent  = d.mode.signature_enforcement;
           $('mExp').textContent  = d.mode.explainer;
           $('mDemo').textContent = d.mode.demo_mode ? 'on' : 'off';
+          $('mVoice').textContent = d.mode.voice || '—';
         }
       })
       .catch(function (err) {

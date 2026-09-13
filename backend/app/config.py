@@ -111,6 +111,15 @@ EXPLAINER_TIMEOUT_SECONDS = float(
 )
 EXPLAINER_CACHE_TTL_SECONDS = int(os.getenv("EXPLAINER_CACHE_TTL_SECONDS", "300"))
 
+# Voice payments (Feature H1/H4) — Gnani Prisma speech-to-text.
+# With no key the /api/ai/transcribe endpoint serves canned mock transcripts,
+# so the voice flow demos with nothing configured. With a key, any Gnani
+# failure returns 503 {"fallback": true} and the app uses on-device STT.
+GNANI_API_KEY = os.getenv("GNANI_API_KEY", "").strip()
+GNANI_STT_URL = os.getenv("GNANI_STT_URL", "https://api.vachana.ai/stt/v3")
+GNANI_LANG = os.getenv("GNANI_LANG", "hi-IN").strip()
+GNANI_TIMEOUT_SECONDS = float(os.getenv("GNANI_TIMEOUT_SECONDS", "6.0"))
+
 # Live ops dashboard (projector page) — gated by a token query param.
 OPS_DASH_TOKEN = os.getenv("OPS_DASH_TOKEN", "setupay-demo")
 

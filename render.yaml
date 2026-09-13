@@ -42,6 +42,17 @@ services:
       - key: LLM_TIMEOUT_SECONDS
         value: "3.0"
 
+      # ── Voice payments: Gnani Prisma STT (Feature H1/H4) ──────
+      # No key => /api/ai/transcribe serves mock transcripts. With a key, any
+      # Gnani failure returns 503 {"fallback": true} and the app uses
+      # on-device speech recognition instead.
+      - key: GNANI_API_KEY
+        sync: false
+      - key: GNANI_STT_URL
+        value: https://api.vachana.ai/stt/v3
+      - key: GNANI_LANG
+        value: hi-IN
+
 databases:
   - name: offlinepay-db
     plan: free

@@ -28,6 +28,7 @@ from ..config import (
 from ..database import get_db
 from ..models import User
 from ..services import explainer as explainer_service
+from ..services import gnani
 from ..services import ops_events as ops
 
 router = APIRouter(tags=["Ops Dashboard"])
@@ -56,6 +57,8 @@ def ops_config(token: str = Query("")):
         "explainer_active": "llm" if explainer_service.uses_llm() else "template",
         "velocity_max_blobs": VELOCITY_MAX_BLOBS,
         "velocity_window_min": VELOCITY_WINDOW_MIN,
+        # Never the key itself — only whether one is configured.
+        "voice_provider": "gnani" if gnani.is_configured() else "mock",
     }
 
 
@@ -84,6 +87,7 @@ def ops_feed(
             "demo_mode": DEMO_MODE,
             "signature_enforcement": SIGNATURE_ENFORCEMENT,
             "explainer": "llm" if explainer_service.uses_llm() else "template",
+            "voice": "gnani" if gnani.is_configured() else "mock",
         },
     }
 

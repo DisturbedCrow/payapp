@@ -7,10 +7,11 @@ Verify a live SetuPay deployment end to end, from the outside.
 Proves config BEHAVIOURALLY rather than by reading env vars (Render masks
 them): demo_mode / enforcement / provider come back from /api/ops/config,
 auto-seed is proven by logging in as the demo cast, and a working
-GEMINI_API_KEY + GEMINI_MODEL is proven by generated_by == "llm".
+GEMINI_API_KEY + GEMINI_MODEL is proven by generated_by == "llm". Voice STT
+is proven by posting a generated silent WAV to /api/ai/transcribe.
 Exits non-zero on any failure.
 """
-import base64, sys, time, uuid
+import base64, io, sys, time, uuid, wave
 from datetime import datetime, timezone
 
 import requests
@@ -45,6 +46,7 @@ else:
 
 print("\n── config, proven behaviourally ──")
 c("GET /health", requests.get(f"{B}/health", timeout=40).json().get("status") == "healthy")
+VOICE = None
 if TOKEN:
     cfg = requests.get(f"{B}/api/ops/config", params={"token": TOKEN}, timeout=40)
     j = cfg.json() if cfg.ok else {}
@@ -53,6 +55,8 @@ if TOKEN:
     c("SIGNATURE_ENFORCEMENT=enforce", j.get("signature_enforcement") == "enforce", j.get("signature_enforcement"))
     c("EXPLAINER_PROVIDER=gemini", j.get("explainer_provider") == "gemini", j.get("explainer_provider"))
     c("Gemini key live (explainer_active=llm)", j.get("explainer_active") == "llm", j.get("explainer_active"))
+    VOICE = j.get("voice_provider")
+    c("voice_provider reported", VOICE in ("gnani", "mock"), VOICE)
 c("empty token rejected", requests.get(f"{B}/api/ops/feed", params={"token": ""}, timeout=40).status_code == 403)
 c("wrong token rejected", requests.get(f"{B}/api/ops/feed", params={"token": "setupay-demo-wrong"}, timeout=40).status_code == 403)
 
@@ -91,6 +95,30 @@ j = requests.get(f"{B}/api/user/limit-explanation", headers=H(atok), params={"la
 c("Gemini explainer (generated_by=llm)", j.get("generated_by") == "llm", f"{j.get('generated_by')} — {j.get('headline')}")
 j = requests.post(f"{B}/api/ai/parse-intent", headers=H(atok), json={"transcript": "jyati ko do sau rupaye bhejo"}, timeout=40).json()
 c("voice intent via Gemini", j.get("amount") == 200.0 and j.get("parsed_by") == "llm", f"Rs {j.get('amount')} by={j.get('parsed_by')}")
+
+def silent_wav(seconds=1, rate=16000):
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+        w.writeframes(b"\x00\x00" * rate * seconds)
+    return buf.getvalue()
+# No JSON Content-Type here: requests must write the multipart boundary itself.
+r = requests.post(f"{B}/api/ai/transcribe", headers={"Authorization": f"Bearer {atok}"},
+                  files={"audio_file": ("silence.wav", silent_wav(), "audio/wav")},
+                  data={"lang": "hi-IN"}, timeout=40)
+try: j = r.json()
+except ValueError: j = {}
+if r.status_code == 200:
+    c("voice STT /api/ai/transcribe", j.get("provider") in ("mock", "gnani") and "amount" in (j.get("entities") or {}),
+      f"provider={j.get('provider')} {j.get('latency_ms')} ms — {j.get('transcript')!r}")
+elif r.status_code == 503:
+    # Silence can legitimately yield no transcript; a 503 fallback is only a
+    # pass when the live provider really is Gnani.
+    gnani_live = VOICE == "gnani" if TOKEN else j.get("provider") == "gnani"
+    c("voice STT /api/ai/transcribe", j.get("fallback") is True and gnani_live,
+      f"provider=gnani fallback ({j.get('reason')}), config voice_provider={VOICE}")
+else:
+    c("voice STT /api/ai/transcribe", False, f"HTTP {r.status_code}")
 
 print("\n── remaining routes ──")
 for p in ("/api/auth/me", "/api/tokens/active", "/api/sync/status", "/api/dashboard/user", "/api/device/list", "/api/user/offline-limit", "/api/contacts"):

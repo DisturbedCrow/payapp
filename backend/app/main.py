@@ -14,6 +14,7 @@ from .routes import (
     ops_routes,
     contact_routes,
     ai_routes,
+    voice_routes,
 )
 from .auth import get_current_user
 from .models import User
@@ -44,6 +45,7 @@ app.include_router(explain_routes.router)
 app.include_router(ops_routes.router)
 app.include_router(contact_routes.router)
 app.include_router(ai_routes.router)
+app.include_router(voice_routes.router)
 
 
 @app.on_event("startup")
