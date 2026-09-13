@@ -5,8 +5,8 @@
 // the parser can be exhaustively unit tested (see
 // test/voice_intent_parser_test.dart).
 //
-// The only import is the app's constant table, which is a `const` data-only
-// file — importing it does not pull in any plugin.
+// The only imports are the app's constant table, which is a `const` data-only
+// file, and the pure-Dart SttResult type — neither pulls in any plugin.
 //
 // Design notes that matter for the demo:
 //   * On the phone the recogniser runs with localeId 'hi_IN', which makes
@@ -18,6 +18,7 @@
 //     ("Hinglish") utterance parses without a language-detection step.
 
 import '../config/constants.dart';
+import 'stt/stt_engine.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public result types
@@ -39,11 +40,17 @@ class PayIntent {
   /// The normalised transcript the parse was performed on.
   final String transcript;
 
+  /// Which speech engine produced [transcript] — 'gnani' | 'mock' |
+  /// 'on-device' (see `SttProvider`). Null for typed input or a plain
+  /// [parse] call. Display-only: shown as a chip on the confirm screen.
+  final String? provider;
+
   const PayIntent({
     this.amount,
     this.recipientQuery,
     required this.confidence,
     required this.transcript,
+    this.provider,
   });
 
   /// True when there is at least a positive amount to show on the confirm
@@ -286,17 +293,16 @@ String normaliseTranscript(String raw) {
   // Give the rupee sign its own token: "₹500" → "₹ 500".
   s = s.replaceAll('₹', ' ₹ ');
 
-  // Indian digit grouping: "1,000" / "1,00,000" → "1000" / "100000".
-  // Done BEFORE punctuation handling so the comma never splits the number.
-  String prev;
-  do {
-    prev = s;
-    s = s.replaceAllMapped(
-      RegExp(r'(\d),(\d\d\d)(?![\d])'),
-      (m) => '${m[1]}${m[2]}',
-    );
-    s = s.replaceAllMapped(RegExp(r'(\d),(\d\d)(?=,)'), (m) => '${m[1]}${m[2]}');
-  } while (s != prev);
+  // Digit grouping → plain digits. Done BEFORE punctuation handling so the
+  // comma never splits the number. One pattern covers Indian grouping
+  // ("1,500", "1,50,000", "10,00,000" — what Gnani's ITN emits) and Western
+  // ("1,500,000"): a 1–3 digit head, any ",dd" lakh groups, then at least one
+  // ",ddd" group. "12,50" (a decimal comma) has no ",ddd" group and is left
+  // for the decimal handling below.
+  s = s.replaceAllMapped(
+    RegExp(r'(?<![\d,])\d{1,3}(?:,\d\d)*(?:,\d\d\d)+(?!\d)'),
+    (m) => m[0]!.replaceAll(',', ''),
+  );
 
   // Drop everything that is not a letter, digit, Devanagari, ₹, separator or
   // whitespace.
@@ -555,10 +561,38 @@ bool _hasVerb(List<String> tokens) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Parses a raw STT transcript into a [PayIntent]. Never throws.
-PayIntent parse(String transcript) {
+PayIntent parse(String transcript) => _parse(transcript);
+
+/// Parses a finished [SttResult] (Feature G2).
+///
+/// A positive [SttResult.amountEntity] — the amount the cloud provider
+/// extracted itself — wins over whatever digits the transcript contains, so a
+/// mis-tokenised "₹1,50,000" can never become ₹1. The payee, verb and
+/// confidence still come from the transcript. Never throws.
+PayIntent parseResult(SttResult result) {
+  final entity = result.amountEntity;
+  final usable = entity != null && entity.isFinite && entity > 0;
+  return _parse(
+    result.transcript,
+    amountOverride: usable ? entity : null,
+    provider: result.provider,
+  );
+}
+
+PayIntent _parse(
+  String transcript, {
+  double? amountOverride,
+  String? provider,
+}) {
   final normalised = normaliseTranscript(transcript);
   if (normalised.isEmpty) {
-    return PayIntent(amount: null, recipientQuery: null, confidence: 0.0, transcript: '');
+    return PayIntent(
+      amount: amountOverride,
+      recipientQuery: null,
+      confidence: amountOverride == null ? 0.0 : 0.5,
+      transcript: '',
+      provider: provider,
+    );
   }
 
   final tokens = normalised.split(' ');
@@ -586,6 +620,7 @@ PayIntent parse(String transcript) {
     }
     if (amount <= 0) amount = null;
   }
+  if (amountOverride != null) amount = amountOverride;
 
   final recipient = _extractRecipient(tokens, numberIdx);
   final verb = _hasVerb(tokens);
@@ -606,6 +641,7 @@ PayIntent parse(String transcript) {
     recipientQuery: recipient,
     confidence: confidence,
     transcript: normalised,
+    provider: provider,
   );
 }
 

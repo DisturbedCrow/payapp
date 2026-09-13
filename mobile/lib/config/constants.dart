@@ -91,6 +91,7 @@ class AppConstants {
       aliases: [
         'jyati', 'jyati kirana', 'jyoti', 'jyoti kirana',
         'ज्याति', 'ज्योति', 'जयति', 'ज्याती',
+        'जयती', // what Gnani Prisma returns for "Jyati"
       ],
     ),
     'ashmita': DemoContact(
