@@ -3,7 +3,7 @@ Live ops dashboard (Feature E) — the page that runs on the projector.
 
 Two routes:
   GET /api/ops/feed?since=<id>&token=...  JSON delta since a cursor
-  GET /dashboard/live?token=...           the self-contained HTML page
+  GET /dashboard/live[?token=...]         the self-contained HTML page
 
 The page polls the feed every 2 s. Polling rather than SSE/websockets is
 deliberate: it survives hostile venue Wi-Fi and Render free-tier restarts
@@ -81,6 +81,8 @@ def ops_feed(
     return {
         "events": events,
         "cursor": cursor,
+        # Changes on process restart or reset — the page re-reads from zero.
+        "epoch": ops.epoch(),
         "stats": stats,
         "limits": ops.limits(),
         "mode": {
@@ -93,16 +95,31 @@ def ops_feed(
 
 
 @router.post("/api/ops/reset")
-def ops_reset(token: str = Query("")):
+def ops_reset(token: str = Query(""), db: Session = Depends(get_db)):
     """Clear the feed between rehearsal runs so the stage starts clean."""
     _require_token(token)
     ops.reset()
+    # Keep the Trust Engine panel populated for the next run.
+    try:
+        from ..main import prime_ops_limits
+        prime_ops_limits(db)
+    except Exception:
+        pass
     return {"status": "reset"}
 
 
 @router.get("/dashboard/live")
-def dashboard_live(token: str = Query("")):
-    _require_token(token)
+def dashboard_live():
+    # The page is a static shell with no data in it; every number comes from
+    # /api/ops/feed, which stays token-gated. Serving the shell without the
+    # token lets the page strip `?token=` from the address bar (it is on the
+    # projector) and still survive a reload — it prompts for the token when
+    # it has none.
     if not os.path.exists(_DASHBOARD_HTML):
         raise HTTPException(status_code=500, detail="Dashboard asset missing")
-    return FileResponse(_DASHBOARD_HTML, media_type="text/html")
+    # no-store: after a redeploy the projector must not keep the old page.
+    return FileResponse(
+        _DASHBOARD_HTML,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )

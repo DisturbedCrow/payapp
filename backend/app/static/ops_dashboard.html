@@ -2,420 +2,1935 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SetuPay Live</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
+<title>SetuPay Live · Ops</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23ff9933'/%3E%3Cpath d='M6 21c3-7 17-7 20 0M6 21h20M11 21v-3.5M16 21v-5M21 21v-3.5' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<!--
+  SetuPay live ops dashboard (Feature E) — the page on the projector.
+
+  Self-contained on purpose: no CDN fonts, scripts or charts, so it renders on
+  hostile venue Wi-Fi. It polls GET /api/ops/feed every 2 s with the shared
+  dashboard token; the token is read from ?token= once, kept in
+  sessionStorage and stripped from the address bar.
+
+  Every value that came from the server is HTML-escaped through the `html`
+  tagged template below — AI explainer text included.
+-->
 <style>
-  :root{
-    --bg:#0b0f1a; --panel:#121829; --panel2:#0e1424; --line:#1e2740;
-    --ink:#e8edf7; --dim:#93a0bd;
-    --green:#2fd07a; --red:#ff4d5e; --amber:#ffb020;
-    --indigo:#6b7dff; --saffron:#ff9933;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
-  body{
-    background:var(--bg); color:var(--ink); font-size:18px;
-    font-family:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
-    display:flex; flex-direction:column; overflow:hidden;
-  }
-  /* ── Toast ─────────────────────────────────────────── */
-  #toast{
-    position:fixed; inset:0 0 auto 0; z-index:50;
-    background:linear-gradient(90deg,#7a1020,#c0182f);
-    color:#fff; font-size:30px; font-weight:800; letter-spacing:.3px;
-    padding:18px 28px; text-align:center;
-    transform:translateY(-110%); transition:transform .28s ease;
-    box-shadow:0 8px 40px rgba(255,77,94,.35);
-  }
-  #toast.show{transform:translateY(0)}
-  /* ── Header ────────────────────────────────────────── */
-  header{
-    display:flex; align-items:center; gap:28px;
-    padding:18px 28px; border-bottom:1px solid var(--line);
-    background:var(--panel2);
-  }
-  .brandwrap{display:flex; flex-direction:column; gap:5px}
-  .brand{font-size:34px; font-weight:800; letter-spacing:-.5px; white-space:nowrap; line-height:1}
-  .brand .accent{color:var(--saffron)}
-  .tagline{font-size:14px; letter-spacing:1.2px; color:var(--dim); white-space:nowrap}
-  .tagline b{color:var(--ink); font-weight:600}
-  .conn{display:flex; align-items:center; gap:9px; font-size:17px; color:var(--dim)}
-  .dot{width:12px;height:12px;border-radius:50%;background:var(--green);
-       box-shadow:0 0 12px var(--green)}
-  .conn.bad .dot{background:var(--red); box-shadow:0 0 12px var(--red)}
-  .conn.bad{color:var(--red)}
-  .stats{margin-left:auto; display:flex; gap:44px}
-  .stat{text-align:right}
-  .stat .k{font-size:14px; letter-spacing:2px; color:var(--dim); text-transform:uppercase}
-  .stat .v{font-size:64px; line-height:1.02; font-weight:800; font-variant-numeric:tabular-nums}
-  .v.green{color:var(--green)} .v.red{color:var(--red)} .v.indigo{color:var(--indigo)}
-  .flashnum{animation:pop .38s ease}
-  @keyframes pop{0%{transform:scale(1)}45%{transform:scale(1.16)}100%{transform:scale(1)}}
-  .modes{display:flex; gap:8px; padding:8px 28px; background:var(--panel2);
-         border-bottom:1px solid var(--line); font-size:14px; color:var(--dim)}
-  .chip{border:1px solid var(--line); border-radius:999px; padding:3px 12px}
-  .chip b{color:var(--ink); font-weight:600}
-  /* ── Columns ───────────────────────────────────────── */
-  main{flex:1; display:grid; grid-template-columns:1.35fr 1fr 1.1fr; gap:1px;
-       background:var(--line); min-height:0}
-  section{background:var(--panel); display:flex; flex-direction:column; min-height:0}
-  h2{margin:0; padding:14px 22px; font-size:15px; letter-spacing:2.4px;
-     text-transform:uppercase; color:var(--dim); border-bottom:1px solid var(--line)}
-  .scroll{overflow:hidden auto; padding:10px 14px; flex:1}
-  .scroll::-webkit-scrollbar{width:8px}
-  .scroll::-webkit-scrollbar-thumb{background:#243052; border-radius:8px}
-  .empty{color:#5d6b90; padding:26px 10px; font-size:17px}
-  /* ── Feed rows ─────────────────────────────────────── */
-  .row{
-    display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:10px;
-    border-left:4px solid #2b3555; margin-bottom:7px;
-    background:#131a2c; font-variant-numeric:tabular-nums;
-  }
-  .row.new{animation:slidein .3s ease}
-  @keyframes slidein{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
-  .row.settled{border-left-color:var(--green); animation:greenflash .4s ease}
-  @keyframes greenflash{0%{background:#12402a}100%{background:#131a2c}}
-  .row.rejected,.row.fraud{border-left-color:var(--red); background:#2a1220}
-  .row.sig{border-left-color:var(--amber); background:#2a2312}
-  .row.confirmed{border-left-color:var(--indigo)}
-  .t{color:var(--dim); font-size:16px; min-width:78px}
-  .who{font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .amt{margin-left:auto; font-weight:800; font-size:22px; white-space:nowrap}
-  .tag{font-size:13px; color:var(--dim); border:1px solid var(--line);
-       border-radius:6px; padding:2px 7px; white-space:nowrap}
-  .verdict{font-size:14px; font-weight:800; letter-spacing:1.4px; min-width:96px; text-align:right}
-  .verdict.ok{color:var(--green)} .verdict.no{color:var(--red)}
-  .verdict.warn{color:var(--amber)} .verdict.info{color:var(--indigo)}
-  .verdict.muted{color:#5d6b90}
-  /* ── Voice rows ────────────────────────────────────── */
-  .row.voice{border-left-color:var(--saffron)}
-  .row.voice.fallback{border-left-color:#3a4566}
-  .vmeta{color:var(--dim); font-weight:400}
-  .vsub{display:block; margin-top:2px; font-size:14px; font-weight:400; color:#5d6b90}
-  .pill{font-size:12px; font-weight:600; letter-spacing:.5px; white-space:nowrap;
-        border-radius:999px; padding:3px 10px}
-  .pill.gnani{color:#c9d1ff; border:1px solid rgba(107,125,255,.5); background:rgba(107,125,255,.12)}
-  .pill.mock{color:var(--amber); border:1px solid rgba(255,176,32,.45); background:rgba(255,176,32,.1);
-             text-transform:uppercase; letter-spacing:1.2px}
-  /* ── Trust engine ──────────────────────────────────── */
-  .user{margin-bottom:20px}
-  .user .top{display:flex; align-items:baseline; gap:10px; margin-bottom:7px}
-  .user .name{font-size:22px; font-weight:700}
-  .user .lim{margin-left:auto; font-size:26px; font-weight:800; font-variant-numeric:tabular-nums}
-  .bar{height:16px; border-radius:8px; background:#1b2338; overflow:hidden}
-  .bar > i{display:block; height:100%; border-radius:8px;
-           background:linear-gradient(90deg,var(--indigo),var(--green));
-           transition:width .38s ease}
-  .risk{margin-top:6px; font-size:15px; color:var(--dim)}
-  .risk b{color:var(--ink)}
-  .user.bump{animation:pop .38s ease}
-  /* ── Threats ───────────────────────────────────────── */
-  .threat{border:1px solid #4a1626; background:#22101c; border-radius:12px;
-          padding:13px 15px; margin-bottom:10px; animation:pulse .4s ease}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,77,94,.7)}
-                   100%{box-shadow:0 0 0 22px rgba(255,77,94,0)}}
-  .threat .hd{display:flex; align-items:center; gap:9px; font-weight:800;
-              color:var(--red); font-size:17px; letter-spacing:.4px}
-  .threat .hd .t{color:var(--dim)}
-  .threat .dt{margin-top:7px; font-size:17px; line-height:1.42; color:#f2dde2}
-  .ai{margin-top:9px; font-size:13px; letter-spacing:1.6px; color:var(--saffron)}
+:root{
+  --bg:#060a13; --line:rgba(148,163,184,.12); --line2:rgba(148,163,184,.22);
+  --panel:rgba(13,20,36,.78);
+  --text:#e6ebf5; --muted:#94a3b8; --faint:#64748b;
+  --saffron:#ff9933; --green:#22c55e; --green2:#4ade80; --red:#f43f5e; --red2:#fb7185;
+  --amber:#f59e0b; --blue:#60a5fa; --violet:#a78bfa; --teal:#2dd4bf; --orange:#fb923c; --sky:#38bdf8;
+  --radius:16px; --scale:1;
+  --sans:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,"Noto Sans","Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"JetBrains Mono","SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{font-size:calc(clamp(14px, .52vw + 6px, 20px) * var(--scale));background:var(--bg)}
+body{
+  margin:0;min-height:100vh;font-family:var(--sans);color:var(--text);
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(1100px 520px at 8% -12%, rgba(255,153,51,.11), transparent 60%),
+    radial-gradient(900px 600px at 100% -5%, rgba(99,102,241,.11), transparent 60%),
+    radial-gradient(900px 500px at 50% 125%, rgba(34,197,94,.07), transparent 60%),
+    var(--bg);
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(148,163,184,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.04) 1px,transparent 1px);
+  background-size:3rem 3rem;
+  -webkit-mask-image:radial-gradient(ellipse at 50% 40%,#000 25%,transparent 78%);
+  mask-image:radial-gradient(ellipse at 50% 40%,#000 25%,transparent 78%);
+}
+button{font:inherit;color:inherit}
+kbd{font-family:var(--mono);font-size:.68em;color:var(--muted);border:1px solid var(--line2);border-bottom-width:2px;border-radius:.3rem;padding:.02rem .3rem;background:rgba(15,23,42,.6)}
+.i{width:1.15rem;height:1.15rem;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.tricolor{position:fixed;top:0;left:0;right:0;height:3px;z-index:60;background:linear-gradient(90deg,#ff9933 0 33.3%,#f8fafc 33.3% 66.6%,#138808 66.6%)}
+.app{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;gap:.85rem;padding:0 1.25rem}
+
+/* ── Top bar ─────────────────────────────────────────── */
+.topbar{display:flex;align-items:center;gap:1.1rem;padding-top:.95rem;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:.75rem;min-width:0}
+.logo{width:2.55rem;height:2.55rem;flex:none;filter:drop-shadow(0 .4rem 1rem rgba(255,153,51,.35))}
+.brand-name{font-size:1.42rem;font-weight:800;letter-spacing:-.02em;line-height:1.1;display:flex;align-items:center;gap:.55rem;white-space:nowrap}
+.brand-name .pay{color:var(--saffron)}
+.live-tag{font-size:.62rem;font-weight:800;letter-spacing:.16em;color:#fecdd3;background:rgba(244,63,94,.14);border:1px solid rgba(244,63,94,.38);padding:.2rem .5rem .2rem .45rem;border-radius:999px;display:inline-flex;align-items:center;gap:.35rem}
+.live-tag::before{content:"";width:.42rem;height:.42rem;border-radius:50%;background:var(--red);box-shadow:0 0 .5rem var(--red);animation:blink 1.6s ease-in-out infinite}
+.brand-sub{font-size:.76rem;color:var(--muted);margin-top:.18rem;white-space:nowrap}
+.brand-sub b{color:#cbd5e1;font-weight:600}
+.modes{display:flex;gap:.4rem;flex-wrap:wrap;flex:1;min-width:0}
+.mode{display:inline-flex;align-items:center;gap:.4rem;font-size:.72rem;color:var(--muted);padding:.28rem .6rem;border:1px solid var(--line2);border-radius:999px;background:rgba(15,23,42,.55);white-space:nowrap}
+.mode i{width:.42rem;height:.42rem;border-radius:50%;background:var(--faint)}
+.mode.ok i{background:var(--green);box-shadow:0 0 .45rem var(--green)}
+.mode.warn i{background:var(--amber);box-shadow:0 0 .45rem var(--amber)}
+.mode.info i{background:var(--blue)}
+.mode b{color:var(--text);font-weight:600}
+.top-right{display:flex;align-items:center;gap:.6rem;margin-left:auto}
+.conn{display:inline-flex;align-items:center;gap:.5rem;font-size:.78rem;font-weight:600;padding:.38rem .7rem;border-radius:999px;border:1px solid var(--line2);background:rgba(15,23,42,.6);white-space:nowrap;--cc:var(--blue)}
+.conn .dot{width:.55rem;height:.55rem;border-radius:50%;background:var(--cc);box-shadow:0 0 0 0 var(--cc)}
+.conn[data-state="live"]{--cc:var(--green);color:#bbf7d0}
+.conn[data-state="live"] .dot{animation:ping 2s var(--ease) infinite}
+.conn[data-state="retry"]{--cc:var(--amber);color:#fde68a}
+.conn[data-state="retry"] .dot{animation:blink 1s infinite}
+.conn[data-state="down"],.conn[data-state="locked"]{--cc:var(--red);color:#fecdd3}
+.clock{font-family:var(--mono);font-size:.95rem;color:var(--muted);padding:0 .2rem}
+.tools{display:flex;gap:.35rem}
+.icon-btn{width:2.25rem;height:2.25rem;display:grid;place-items:center;border-radius:.7rem;border:1px solid var(--line2);background:rgba(15,23,42,.65);color:var(--muted);cursor:pointer;transition:color .15s,border-color .15s,background .15s}
+.icon-btn:hover{color:var(--text);border-color:rgba(148,163,184,.42);background:rgba(30,41,59,.85)}
+.icon-btn:focus-visible,.chip:focus-visible,.kpi:focus-visible,.row:focus-visible,.user:focus-visible,.threat:focus-visible,.btn:focus-visible,.lg:focus-visible{outline:2px solid var(--saffron);outline-offset:2px}
+.icon-btn[aria-pressed="true"]{color:var(--saffron);border-color:rgba(255,153,51,.5);background:rgba(255,153,51,.1)}
+
+/* ── KPI tiles ───────────────────────────────────────── */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.85rem}
+.kpi{position:relative;overflow:hidden;border-radius:var(--radius);padding:.85rem 1.1rem .75rem;background:linear-gradient(180deg,rgba(30,41,59,.55),rgba(15,23,42,.7));border:1px solid var(--line);cursor:pointer;transition:border-color .2s,transform .2s var(--ease)}
+.kpi::after{content:"";position:absolute;right:-18%;bottom:-70%;width:65%;height:140%;background:radial-gradient(closest-side,var(--glow),transparent);opacity:.3;pointer-events:none;transition:opacity .3s}
+.kpi:hover{border-color:var(--line2);transform:translateY(-2px)}
+.kpi:hover::after{opacity:.45}
+.kpi-head{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;font-weight:700}
+.kpi-head .i{color:var(--accent);width:1.05rem;height:1.05rem}
+.kpi-value{font-size:2.85rem;font-weight:800;letter-spacing:-.035em;line-height:1.04;margin:.22rem 0 .18rem;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi.pop .kpi-value{animation:pop .55s var(--ease)}
+.kpi-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:.75rem;font-size:.78rem;color:var(--muted);min-height:1.9rem}
+.kpi-sub{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kpi-sub b{color:var(--text);font-weight:600}
+.spark{width:7.5rem;height:1.9rem;flex:none}
+.spark rect{fill:rgba(148,163,184,.16)}
+.spark rect.on{fill:var(--accent)}
+.rule-dots{display:flex;gap:.3rem;flex-wrap:nowrap;overflow:hidden}
+.rule-dots span{display:inline-flex;align-items:center;gap:.25rem;white-space:nowrap}
+.rule-dots span::before{content:"";width:.45rem;height:.45rem;border-radius:50%;background:var(--rc)}
+.k-green{--accent:var(--green2);--glow:rgba(34,197,94,.7)}
+.k-sky{--accent:#e0f2fe;--glow:rgba(56,189,248,.6)}
+.k-red{--accent:var(--red2);--glow:rgba(244,63,94,.7)}
+.k-violet{--accent:#c4b5fd;--glow:rgba(139,92,246,.7)}
+
+/* ── Panels ──────────────────────────────────────────── */
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1.1fr);gap:.85rem}
+.panel{min-height:0;display:flex;flex-direction:column;border-radius:var(--radius);background:var(--panel);border:1px solid var(--line);overflow:hidden;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:border-color .3s,box-shadow .3s}
+.panel.ping{border-color:rgba(167,139,250,.55);box-shadow:0 0 0 3px rgba(167,139,250,.15)}
+.panel-head{display:flex;align-items:center;gap:.6rem;padding:.72rem 1rem;border-bottom:1px solid var(--line);flex-wrap:wrap;min-height:3.2rem}
+.panel-head h2{margin:0;font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:#cbd5e1;font-weight:750;display:flex;align-items:center;gap:.5rem;white-space:nowrap}
+.panel-head h2 .i{width:1rem;height:1rem;color:var(--hc,var(--muted))}
+.panel-sub{font-size:.72rem;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.count-pill{margin-left:auto;font-size:.72rem;font-weight:800;color:#fecdd3;background:rgba(244,63,94,.15);border:1px solid rgba(244,63,94,.35);border-radius:999px;padding:.12rem .55rem}
+.panel-body{flex:1;min-height:0;overflow:auto;padding:.55rem .6rem;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.28) transparent;overscroll-behavior:contain}
+.panel-body::-webkit-scrollbar{width:8px}
+.panel-body::-webkit-scrollbar-thumb{background:rgba(148,163,184,.25);border-radius:8px}
+
+.filters{display:flex;gap:.3rem;margin-left:auto;flex-wrap:wrap}
+.chip{font-size:.72rem;color:var(--muted);background:transparent;border:1px solid var(--line2);border-radius:999px;padding:.24rem .5rem .24rem .6rem;cursor:pointer;display:inline-flex;gap:.35rem;align-items:center;transition:background .15s,color .15s,border-color .15s;white-space:nowrap}
+.chip:hover{color:var(--text);border-color:rgba(148,163,184,.45)}
+.chip .n{font-weight:700;color:var(--text);min-width:1ch;text-align:right}
+.chip kbd{font-size:.58rem;padding:0 .22rem}
+.chip.on{color:#0b1220;background:#e2e8f0;border-color:#e2e8f0}
+.chip.on .n{color:#0b1220}
+.chip.on kbd{color:#334155;border-color:#94a3b8;background:transparent}
+
+.paused-bar{display:flex;align-items:center;gap:.6rem;margin:.55rem .6rem 0;padding:.5rem .75rem;border-radius:.7rem;background:rgba(255,153,51,.1);border:1px solid rgba(255,153,51,.35);color:#fed7aa;font-size:.8rem;cursor:pointer}
+.paused-bar b{color:#fff}
+.paused-bar span:last-child{margin-left:auto;color:var(--muted)}
+
+/* ── Feed rows ───────────────────────────────────────── */
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto 6.4rem;align-items:center;gap:.8rem;padding:.58rem .75rem .58rem .65rem;border-radius:.8rem;margin-bottom:.38rem;background:rgba(30,41,59,.34);border:1px solid transparent;border-left:3px solid var(--tone,var(--faint));cursor:pointer;transition:background .2s,border-color .2s}
+.row:hover{background:rgba(51,65,85,.48);border-color:var(--line2);border-left-color:var(--tone)}
+.row-ico{width:2.15rem;height:2.15rem;border-radius:.65rem;display:grid;place-items:center;color:var(--tone);background:color-mix(in srgb,var(--tone) 15%,transparent)}
+.row-ico .i{width:1.05rem;height:1.05rem}
+.row-main{min-width:0}
+.row-title{font-weight:650;font-size:1.02rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.005em}
+.arrow{color:var(--faint);margin:0 .35rem;font-weight:400}
+.mult{display:inline-block;margin-left:.45rem;font-size:.72rem;font-weight:800;color:var(--tone);background:color-mix(in srgb,var(--tone) 16%,transparent);border-radius:.35rem;padding:.05rem .35rem;vertical-align:.12em}
+.mult.bump{animation:pop .5s var(--ease)}
+.row-meta{display:flex;align-items:center;gap:.45rem;margin-top:.22rem;font-size:.72rem;color:var(--muted);overflow:hidden;white-space:nowrap}
+.row-meta time{font-family:var(--mono);color:var(--faint);font-size:.7rem}
+.tag{display:inline-flex;align-items:center;gap:.28rem;padding:.06rem .42rem;border-radius:.35rem;background:rgba(148,163,184,.1);color:#cbd5e1;font-size:.69rem;white-space:nowrap}
+.tag .i{width:.78rem;height:.78rem}
+.tag.red{background:rgba(244,63,94,.15);color:#fda4af}
+.tag.amber{background:rgba(245,158,11,.14);color:#fcd34d}
+.tag.green{background:rgba(34,197,94,.13);color:#86efac}
+.tag.violet{background:rgba(167,139,250,.15);color:#ddd6fe}
+.tag.gnani{background:linear-gradient(90deg,rgba(99,102,241,.3),rgba(236,72,153,.25));color:#e0e7ff;font-weight:600}
+.row-amt{font-size:1.14rem;font-weight:780;letter-spacing:-.01em;white-space:nowrap}
+.row-amt .neg{color:#fda4af}
+.row-amt .pos{color:#86efac}
+.badge{justify-self:end;font-size:.63rem;font-weight:800;letter-spacing:.12em;padding:.3rem .5rem;border-radius:.4rem;color:var(--tone);background:color-mix(in srgb,var(--tone) 13%,transparent);border:1px solid color-mix(in srgb,var(--tone) 35%,transparent);white-space:nowrap}
+.st-received{--tone:var(--blue)}
+.st-settled{--tone:var(--green)}
+.st-confirmed{--tone:var(--teal)}
+.st-online{--tone:var(--sky)}
+.st-rejected{--tone:var(--red);background:linear-gradient(90deg,rgba(244,63,94,.13),rgba(30,41,59,.3) 70%)}
+.st-unsigned{--tone:var(--amber)}
+.st-ai{--tone:var(--violet)}
+.st-voice{--tone:var(--orange)}
+.st-key{--tone:var(--teal)}
+.st-evict{--tone:var(--amber)}
+.st-generic{--tone:var(--faint)}
+.steps{display:inline-flex;align-items:center;margin:0 .15rem}
+.steps i{position:relative;width:.42rem;height:.42rem;border-radius:50%;background:rgba(148,163,184,.28)}
+.steps i+i{margin-left:.5rem}
+.steps i+i::before{content:"";position:absolute;right:100%;top:50%;width:.5rem;height:2px;margin-top:-1px;background:rgba(148,163,184,.28)}
+.steps.s-1 i:nth-child(1),.steps.s-2 i:nth-child(-n+2),.steps.s-3 i{background:var(--tone)}
+.steps.s-2 i:nth-child(2)::before,.steps.s-3 i::before{background:var(--tone)}
+.row.enter{animation:rowIn .5s var(--ease)}
+.row.flash{animation:rowFlash 1.2s ease-out}
+#feed[data-filter="pay"] .row:not(.cat-pay),
+#feed[data-filter="blocked"] .row:not(.cat-blocked),
+#feed[data-filter="ai"] .row:not(.cat-ai),
+#feed[data-filter="voice"] .row:not(.cat-voice){display:none}
+
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:.4rem;padding:2.5rem 1rem;color:var(--faint);min-height:12rem}
+.empty .i{width:2.2rem;height:2.2rem;color:var(--muted);opacity:.7;margin-bottom:.35rem}
+.empty b{color:#cbd5e1;font-size:.95rem}
+.empty span{font-size:.8rem;max-width:22rem;line-height:1.45}
+.empty.shield .i{color:var(--green2);opacity:1;filter:drop-shadow(0 0 .6rem rgba(74,222,128,.45))}
+
+/* ── Trust engine ────────────────────────────────────── */
+.user{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.75rem;padding:.62rem .7rem;border-radius:.85rem;margin-bottom:.3rem;cursor:pointer;border:1px solid transparent;transition:background .2s,border-color .2s}
+.user:hover{background:rgba(51,65,85,.36);border-color:var(--line)}
+.user.enter{animation:rowIn .5s var(--ease)}
+.avatar{width:2.35rem;height:2.35rem;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.95rem;color:#0b1220;background:linear-gradient(135deg,hsl(var(--h) 85% 74%),hsl(calc(var(--h) + 45) 80% 58%));box-shadow:0 0 0 2px rgba(6,10,19,.8),0 0 0 3px color-mix(in srgb,var(--tc) 55%,transparent)}
+.user-main{min-width:0}
+.user-top{display:flex;align-items:center;gap:.45rem;min-width:0}
+.user .name{font-weight:650;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tier{font-size:.58rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:.13rem .38rem;border-radius:.35rem;color:var(--tc);background:color-mix(in srgb,var(--tc) 15%,transparent);white-space:nowrap}
+.user .limit{margin-left:auto;font-size:1.18rem;font-weight:800;letter-spacing:-.02em;white-space:nowrap}
+.delta{font-size:.7rem;font-weight:750;padding:.08rem .38rem;border-radius:.35rem;white-space:nowrap;animation:pop .5s var(--ease)}
+.delta.down{color:#fda4af;background:rgba(244,63,94,.16)}
+.delta.up{color:#86efac;background:rgba(34,197,94,.16)}
+.bar{position:relative;height:.48rem;border-radius:999px;background:rgba(148,163,184,.13);margin:.42rem 0 .32rem;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,var(--tc) 45%,#1e293b),var(--tc));box-shadow:0 0 .8rem color-mix(in srgb,var(--tc) 45%,transparent);transition:width .9s var(--ease)}
+.bar s{position:absolute;top:0;bottom:0;width:2px;background:rgba(6,10,19,.75)}
+.user-foot{display:flex;gap:.75rem;font-size:.7rem;color:var(--muted);white-space:nowrap;overflow:hidden}
+.user-foot b{color:var(--text);font-weight:650}
+.user.flash-down{animation:flashDown 1.8s ease-out}
+.user.flash-up{animation:flashUp 1.8s ease-out}
+.t-trusted{--tc:#4ade80}
+.t-good{--tc:#a3e635}
+.t-watch{--tc:#facc15}
+.t-caution{--tc:#fb923c}
+.t-high{--tc:#f43f5e}
+.t-frozen{--tc:#94a3b8}
+
+/* ── Threats ─────────────────────────────────────────── */
+.rulebar{padding:.6rem 1rem .1rem}
+.stack{display:flex;height:.42rem;border-radius:999px;overflow:hidden;gap:2px;background:rgba(148,163,184,.1)}
+.stack i{background:var(--rc);transition:flex-grow .6s var(--ease)}
+.legend{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.5rem}
+.lg{font-size:.7rem;color:var(--muted);background:transparent;border:1px solid var(--line2);border-radius:999px;padding:.16rem .5rem .16rem .42rem;display:inline-flex;align-items:center;gap:.32rem;cursor:pointer;transition:background .15s,border-color .15s}
+.lg::before{content:"";width:.48rem;height:.48rem;border-radius:50%;background:var(--rc)}
+.lg b{color:var(--text)}
+.lg.on{border-color:var(--rc);color:var(--text);background:color-mix(in srgb,var(--rc) 16%,transparent)}
+.threat{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.7rem;padding:.75rem .85rem;border-radius:.9rem;margin-bottom:.5rem;cursor:pointer;background:linear-gradient(135deg,color-mix(in srgb,var(--rc) 13%,rgba(15,23,42,.92)),rgba(15,23,42,.55));border:1px solid color-mix(in srgb,var(--rc) 30%,transparent);transition:border-color .2s,transform .2s var(--ease)}
+.threat:hover{border-color:color-mix(in srgb,var(--rc) 60%,transparent);transform:translateX(-2px)}
+.threat.enter{animation:threatIn .6s var(--ease),glow 2.2s ease-out}
+.threat.advisory{background:rgba(30,41,59,.4);border-style:dashed}
+.threat-ico{width:2.2rem;height:2.2rem;border-radius:.7rem;display:grid;place-items:center;color:var(--rc);background:color-mix(in srgb,var(--rc) 18%,transparent)}
+.threat-body{min-width:0}
+.threat-top{display:flex;align-items:center;gap:.45rem;min-width:0}
+.threat-top h4{margin:0;font-size:.96rem;font-weight:700;color:color-mix(in srgb,var(--rc) 70%,#fff);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.threat-top .mult{--tone:var(--rc);margin-left:0}
+.threat-top time{margin-left:auto;font-size:.7rem;color:var(--faint);white-space:nowrap}
+.threat p{margin:.28rem 0 .42rem;font-size:.84rem;line-height:1.45;color:#dbe2ee;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.threat-meta{display:flex;gap:.55rem;font-size:.69rem;color:var(--muted);align-items:center;flex-wrap:wrap}
+.threat-meta .who{color:var(--text);font-weight:650}
+.threat-meta .src{display:inline-flex;align-items:center;gap:.25rem;color:#c4b5fd;text-transform:uppercase;letter-spacing:.08em;font-weight:700;font-size:.62rem}
+.threat-meta .src .i{width:.75rem;height:.75rem}
+.r-replay{--rc:#a78bfa}
+.r-signature{--rc:#f43f5e}
+.r-over_limit{--rc:#f59e0b}
+.r-velocity{--rc:#fb923c}
+.r-heuristics{--rc:#f472b6}
+#threats[data-rule="replay"] .threat:not(.r-replay),
+#threats[data-rule="signature"] .threat:not(.r-signature),
+#threats[data-rule="over_limit"] .threat:not(.r-over_limit),
+#threats[data-rule="velocity"] .threat:not(.r-velocity),
+#threats[data-rule="heuristics"] .threat:not(.r-heuristics){display:none}
+
+/* ── Status bar ──────────────────────────────────────── */
+.statusbar{display:flex;align-items:center;gap:.9rem;font-size:.7rem;color:var(--faint);padding-bottom:.55rem;flex-wrap:wrap}
+.statusbar .mono{font-family:var(--mono)}
+.sb-keys{margin-left:auto;display:flex;gap:.8rem;flex-wrap:wrap}
+.sb-keys span{display:inline-flex;gap:.3rem;align-items:center}
+
+/* ── Toasts & alarm ──────────────────────────────────── */
+.toasts{position:fixed;top:1rem;left:50%;transform:translateX(-50%);z-index:70;display:flex;flex-direction:column;gap:.5rem;width:min(34rem,calc(100vw - 2.5rem));pointer-events:none}
+.toast{pointer-events:auto;display:flex;gap:.8rem;align-items:center;padding:.8rem 1rem;border-radius:.9rem;background:rgba(15,23,42,.94);border:1px solid color-mix(in srgb,var(--tc) 50%,transparent);box-shadow:0 1rem 2.5rem rgba(0,0,0,.5),0 0 0 1px rgba(0,0,0,.2),inset 0 0 2rem color-mix(in srgb,var(--tc) 12%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);animation:toastIn .45s var(--ease)}
+.toast.out{animation:toastOut .35s ease-in forwards}
+.toast-ico{width:2.3rem;height:2.3rem;border-radius:.7rem;display:grid;place-items:center;color:var(--tc);background:color-mix(in srgb,var(--tc) 18%,transparent);flex:none}
+.toast b{display:block;font-size:.95rem;color:#fff}
+.toast span{display:block;font-size:.8rem;color:var(--muted);margin-top:.1rem}
+.tone-red{--tc:var(--red)}
+.tone-green{--tc:var(--green)}
+.tone-blue{--tc:var(--blue)}
+.tone-amber{--tc:var(--amber)}
+body.alarm::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:30;box-shadow:inset 0 0 0 3px rgba(244,63,94,.85),inset 0 0 9rem rgba(244,63,94,.28);animation:alarm 1.3s ease-out forwards}
+
+/* ── Drawer ──────────────────────────────────────────── */
+.scrim{position:fixed;inset:0;z-index:40;background:rgba(2,6,23,.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);animation:fadeIn .25s ease}
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:50;width:min(34rem,100vw);display:flex;flex-direction:column;background:linear-gradient(180deg,#0f172a,#0a1122);border-left:1px solid var(--line2);box-shadow:-2rem 0 4rem rgba(0,0,0,.55);transform:translateX(105%);visibility:hidden;transition:transform .35s var(--ease),visibility 0s linear .35s}
+.drawer.open{transform:none;visibility:visible;transition:transform .35s var(--ease)}
+.drawer-head{display:flex;align-items:flex-start;gap:1rem;padding:1.15rem 1.25rem 1rem;border-bottom:1px solid var(--line)}
+.drawer-kicker{font-size:.68rem;letter-spacing:.15em;text-transform:uppercase;color:var(--saffron);font-weight:800}
+.drawer-head h3{margin:.3rem 0 0;font-size:1.32rem;letter-spacing:-.015em;line-height:1.25;overflow-wrap:anywhere}
+.drawer-head .icon-btn{margin-left:auto;flex:none}
+.drawer-body{flex:1;overflow:auto;padding:1.1rem 1.25rem 2rem;scrollbar-width:thin}
+.sec{margin-bottom:1.35rem}
+.sec-k{font-size:.66rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);font-weight:800;margin-bottom:.55rem}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;margin:0}
+.f{background:rgba(30,41,59,.45);border:1px solid var(--line);border-radius:.7rem;padding:.5rem .7rem;min-width:0}
+.f.wide{grid-column:1/-1}
+.f dt{font-size:.64rem;color:var(--faint);text-transform:uppercase;letter-spacing:.09em;font-weight:700}
+.f dd{margin:.18rem 0 0;font-weight:600;overflow-wrap:anywhere;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.f dd>div{flex-basis:100%;min-width:0}
+.mono{font-family:var(--mono);font-size:.8rem;font-weight:500}
+.copy{display:inline-flex;align-items:center;gap:.25rem;font-size:.66rem;font-family:var(--sans);color:var(--muted);background:rgba(148,163,184,.1);border:1px solid var(--line2);border-radius:.4rem;padding:.1rem .4rem;cursor:pointer}
+.copy:hover{color:var(--text)}
+.copy .i{width:.75rem;height:.75rem}
+.callout{--cc:var(--violet);border-radius:.85rem;padding:.8rem .95rem;background:color-mix(in srgb,var(--cc) 11%,transparent);border:1px solid color-mix(in srgb,var(--cc) 35%,transparent)}
+.callout-k{display:flex;gap:.4rem;align-items:center;font-size:.66rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:color-mix(in srgb,var(--cc) 75%,#fff)}
+.callout-k .i{width:.9rem;height:.9rem}
+.callout p{margin:.45rem 0 0;line-height:1.55;font-size:.95rem}
+.timeline{list-style:none;margin:0;padding:0}
+.timeline li{position:relative;padding:0 0 .95rem 1.75rem}
+.timeline li::before{content:"";position:absolute;left:0;top:.2rem;width:.8rem;height:.8rem;border-radius:50%;border:2px solid var(--faint);background:#0b1220;z-index:1}
+.timeline li::after{content:"";position:absolute;left:calc(.4rem - 1px);top:1rem;bottom:0;width:2px;background:var(--line2)}
+.timeline li:last-child::after{display:none}
+.timeline li.done::before{background:var(--green);border-color:var(--green);box-shadow:0 0 .6rem rgba(34,197,94,.5)}
+.timeline li.fail::before{background:var(--red);border-color:var(--red);box-shadow:0 0 .6rem rgba(244,63,94,.5)}
+.timeline li.warn::before{background:var(--amber);border-color:var(--amber)}
+.tl-t{font-weight:650}
+.tl-s{font-size:.78rem;color:var(--muted);margin-top:.1rem}
+.mini{list-style:none;margin:0;padding:0}
+.mini li{display:flex;gap:.7rem;padding:.42rem 0;border-bottom:1px dashed var(--line);font-size:.84rem;line-height:1.35}
+.mini time{font-family:var(--mono);color:var(--faint);font-size:.75rem;padding-top:.08rem;flex:none}
+.prose{margin:0;line-height:1.6;color:#cbd5e1;font-size:.92rem}
+.note{margin:.55rem 0 0;font-size:.76rem;color:var(--faint);line-height:1.5}
+details.raw summary{cursor:pointer;color:var(--muted);font-size:.78rem;padding:.2rem 0}
+details.raw pre{margin:.5rem 0 0;background:#020617;border:1px solid var(--line);border-radius:.6rem;padding:.75rem;overflow:auto;font-family:var(--mono);font-size:.72rem;max-height:18rem;color:#cbd5e1}
+.hero{display:flex;align-items:center;gap:1.1rem;padding:1rem;border-radius:1rem;background:linear-gradient(135deg,color-mix(in srgb,var(--tc) 12%,transparent),rgba(30,41,59,.35));border:1px solid color-mix(in srgb,var(--tc) 30%,transparent)}
+.ring{--p:0;width:5.2rem;height:5.2rem;border-radius:50%;flex:none;display:grid;place-items:center;background:conic-gradient(var(--tc) calc(var(--p) * 1%),rgba(148,163,184,.15) 0)}
+.ring>div{width:4.2rem;height:4.2rem;border-radius:50%;background:#0d1528;display:grid;place-items:center;align-content:center}
+.ring b{font-size:1.45rem;line-height:1}
+.ring span{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}
+.hero-k{font-size:.66rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.hero-v{font-size:2.2rem;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.hero-s{font-size:.8rem;color:var(--muted);display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
+.hist{width:100%;height:7.5rem;display:block;background:rgba(30,41,59,.3);border:1px solid var(--line);border-radius:.7rem}
+.hist line{stroke:rgba(148,163,184,.12);stroke-width:1;vector-effect:non-scaling-stroke}
+.hist .area{fill:color-mix(in srgb,var(--tc) 16%,transparent)}
+.hist .line{fill:none;stroke:var(--tc);stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.path-legend{font-size:.8rem;color:var(--muted);margin-top:.45rem}
+.path-legend b{color:var(--text)}
+.bands{width:100%;border-collapse:collapse;font-size:.84rem}
+.bands td{padding:.38rem .6rem;border-bottom:1px solid var(--line)}
+.bands td:last-child{text-align:right;font-weight:650}
+.bands tr.on td{background:color-mix(in srgb,var(--tc) 14%,transparent);color:#fff}
+.bands tr.on td:first-child{box-shadow:inset 3px 0 0 var(--tc)}
+
+/* ── Popover, help, gate ─────────────────────────────── */
+.popover{position:fixed;z-index:55;width:19rem;padding:.9rem;border-radius:1rem;background:rgba(15,23,42,.97);border:1px solid var(--line2);box-shadow:0 1.5rem 3rem rgba(0,0,0,.55);animation:fadeIn .18s ease}
+.pop-k{font-size:.64rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);font-weight:800;margin:0 0 .45rem}
+.pop-sec{padding:.2rem 0 .75rem;border-bottom:1px solid var(--line);margin-bottom:.7rem}
+.pop-sec:last-child{border:0;margin:0;padding-bottom:0}
+.seg{display:grid;grid-template-columns:repeat(5,1fr);gap:.25rem}
+.seg button{padding:.35rem 0;border-radius:.5rem;border:1px solid var(--line2);background:transparent;color:var(--muted);cursor:pointer;font-size:.78rem}
+.seg button.on{background:#e2e8f0;color:#0b1220;border-color:#e2e8f0;font-weight:700}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:.75rem;font-size:.84rem;padding:.3rem 0;cursor:pointer}
+.switch input{appearance:none;-webkit-appearance:none;width:2.3rem;height:1.3rem;border-radius:999px;background:rgba(148,163,184,.25);position:relative;cursor:pointer;transition:background .2s;flex:none;margin:0}
+.switch input::after{content:"";position:absolute;top:.15rem;left:.15rem;width:1rem;height:1rem;border-radius:50%;background:#fff;transition:transform .2s var(--ease)}
+.switch input:checked{background:var(--green)}
+.switch input:checked::after{transform:translateX(1rem)}
+.switch input:focus-visible{outline:2px solid var(--saffron);outline-offset:2px}
+.btn{width:100%;padding:.55rem .8rem;border-radius:.65rem;border:1px solid var(--line2);background:rgba(30,41,59,.6);cursor:pointer;font-weight:650;font-size:.84rem;transition:background .15s,border-color .15s}
+.btn:hover{background:rgba(51,65,85,.8)}
+.btn.danger{color:#fecdd3;border-color:rgba(244,63,94,.4);background:rgba(244,63,94,.1)}
+.btn.danger.armed{color:#fff;background:var(--red);border-color:var(--red);animation:pop .4s var(--ease)}
+.btn.primary{color:#0b1220;background:var(--saffron);border-color:var(--saffron)}
+.btn.primary:hover{background:#ffad5c}
+.btn+.btn{margin-top:.45rem}
+.pop-hint{font-size:.72rem;color:var(--faint);margin:.4rem 0 0;line-height:1.45}
+.modal-wrap{position:fixed;inset:0;z-index:75;display:grid;place-items:center;padding:1.25rem;background:rgba(2,6,23,.6);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);animation:fadeIn .2s ease}
+.modal{width:min(30rem,100%);border-radius:1.1rem;background:#0f172a;border:1px solid var(--line2);box-shadow:0 2rem 4rem rgba(0,0,0,.6);padding:1.3rem 1.4rem}
+.modal h3{margin:0 0 .9rem;font-size:1.15rem}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:.55rem 1rem;align-items:center;font-size:.9rem;color:#cbd5e1}
+.keys kbd{font-size:.8rem;justify-self:start}
+.gate{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:1.25rem;background:radial-gradient(900px 500px at 50% 0%,rgba(255,153,51,.12),transparent 60%),var(--bg)}
+.gate-card{width:min(25rem,100%);text-align:center;padding:2rem 1.6rem;border-radius:1.2rem;background:rgba(15,23,42,.8);border:1px solid var(--line2);box-shadow:0 2rem 4rem rgba(0,0,0,.5)}
+.gate-card .logo{width:3.3rem;height:3.3rem;margin:0 auto .9rem}
+.gate-card h1{margin:0;font-size:1.4rem}
+.gate-card p{margin:.4rem 0 1.2rem;color:var(--muted);font-size:.88rem;line-height:1.5}
+.gate-card input{width:100%;padding:.7rem .85rem;border-radius:.7rem;border:1px solid var(--line2);background:#020617;color:var(--text);font:inherit;font-size:.95rem;margin-bottom:.7rem}
+.gate-card input:focus{outline:2px solid var(--saffron);outline-offset:1px}
+.gate-err{color:#fda4af;font-size:.8rem;min-height:1.1rem;margin:.6rem 0 0}
+
+/* ── Motion ──────────────────────────────────────────── */
+@keyframes blink{50%{opacity:.35}}
+@keyframes ping{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--cc) 70%,transparent)}80%,100%{box-shadow:0 0 0 .5rem transparent}}
+@keyframes pop{0%{transform:scale(1)}35%{transform:scale(1.07)}100%{transform:scale(1)}}
+@keyframes rowIn{from{opacity:0;transform:translateY(-.6rem) scale(.985)}to{opacity:1;transform:none}}
+@keyframes rowFlash{0%{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--tone) 22%,transparent)}100%{box-shadow:inset 0 0 0 999px transparent}}
+@keyframes threatIn{from{opacity:0;transform:translateX(1.5rem) scale(.97)}to{opacity:1;transform:none}}
+@keyframes glow{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 65%,transparent)}100%{box-shadow:0 0 0 1.1rem transparent}}
+@keyframes flashDown{0%{background:rgba(244,63,94,.24)}100%{background:transparent}}
+@keyframes flashUp{0%{background:rgba(34,197,94,.22)}100%{background:transparent}}
+@keyframes alarm{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+@keyframes toastIn{from{opacity:0;transform:translateY(-1rem) scale(.96)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateY(-.6rem) scale(.97)}}
+@keyframes fadeIn{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+}
+html.no-motion *,html.no-motion *::before,html.no-motion *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+
+/* ── Smaller screens ─────────────────────────────────── */
+@media (max-width:1400px){
+  .chip kbd{display:none}
+}
+@media (max-width:1100px){
+  .app{height:auto;min-height:100vh}
+  .grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .feed-panel{grid-column:1/-1}
+  .feed-panel .panel-body{max-height:62vh}
+  .trust-panel .panel-body,.threat-panel .panel-body{max-height:58vh}
+  .sb-keys{display:none}
+}
+@media (max-width:760px){
+  .app{padding:0 1rem}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi-value{font-size:2rem}
+  .spark,.clock{display:none}
+  .grid{grid-template-columns:minmax(0,1fr)}
+  .modes{order:3;flex-basis:100%}
+  .brand-sub{display:none}
+  .row{grid-template-columns:auto minmax(0,1fr) auto}
+  .row .badge,.row-meta .steps,.row-meta .tag.green{display:none}
+  .filters{margin-left:0}
+  .fields{grid-template-columns:minmax(0,1fr)}
+}
 </style>
 </head>
 <body>
-<div id="toast"></div>
+<div class="tricolor" aria-hidden="true"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 
-<header>
-  <div class="brandwrap">
-    <div class="brand">Setu<span class="accent">Pay</span> Live</div>
-    <div class="tagline">powered by the <b>Vishwas Engine</b></div>
-  </div>
-  <div class="conn" id="conn"><span class="dot"></span><span id="connText">online</span></div>
-  <div class="stats">
-    <div class="stat"><div class="k">₹ Settled</div><div class="v green" id="sSettled">0</div></div>
-    <div class="stat"><div class="k">Blobs</div><div class="v" id="sBlobs">0</div></div>
-    <div class="stat"><div class="k">Attacks Blocked</div><div class="v red" id="sAttacks">0</div></div>
-    <div class="stat"><div class="k">Users</div><div class="v indigo" id="sUsers">0</div></div>
-  </div>
-</header>
-<div class="modes">
-  <span class="chip">signatures <b id="mSig">—</b></span>
-  <span class="chip">explainer <b id="mExp">—</b></span>
-  <span class="chip">demo mode <b id="mDemo">—</b></span>
-  <span class="chip">voice <b id="mVoice">—</b></span>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <defs><linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffb35c"/><stop offset="1" stop-color="#f06a0f"/></linearGradient></defs>
+        <rect width="32" height="32" rx="9" fill="url(#lg1)"/>
+        <path d="M6 21c3-7.2 17-7.2 20 0" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <path d="M5.5 21h21M11 21v-3.6M16 21v-5.2M21 21v-3.6" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="brand-name"><span>Setu<span class="pay">Pay</span></span><span class="live-tag">LIVE</span></div>
+        <div class="brand-sub">Offline payments control room · powered by the <b>Vishwas Engine</b></div>
+      </div>
+    </div>
+    <div class="modes" id="modes" aria-label="Backend mode"></div>
+    <div class="top-right">
+      <div class="conn" id="conn" data-state="connecting" role="status"><span class="dot"></span><span id="connText">Connecting…</span></div>
+      <div class="clock" id="clock" aria-hidden="true">--:--:--</div>
+      <div class="tools">
+        <button class="icon-btn" id="btnPause" type="button" aria-pressed="false" title="Pause the feed (Space)"><span class="sr">Pause feed</span></button>
+        <button class="icon-btn" id="btnSound" type="button" aria-pressed="false" title="Alert sound on block (S)"><span class="sr">Alert sound</span></button>
+        <button class="icon-btn" id="btnFull" type="button" title="Fullscreen (F)"><span class="sr">Fullscreen</span></button>
+        <button class="icon-btn" id="btnSettings" type="button" aria-expanded="false" aria-controls="settings" title="Display settings"><span class="sr">Settings</span></button>
+      </div>
+    </div>
+  </header>
+
+  <section class="kpis" aria-label="Headline numbers">
+    <div class="kpi k-green" id="kpiSettled" role="button" tabindex="0" title="Show payments">
+      <div class="kpi-head"><span>₹ Settled</span><span data-icon="rupee"></span></div>
+      <div class="kpi-value" id="kSettled">₹0</div>
+      <div class="kpi-foot"><span class="kpi-sub" id="kSettledSub">Waiting for the first sync</span><svg class="spark" id="sparkSettled" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+    </div>
+    <div class="kpi k-sky" id="kpiBlobs" role="button" tabindex="0" title="Show payments">
+      <div class="kpi-head"><span>Payments synced</span><span data-icon="sync"></span></div>
+      <div class="kpi-value" id="kBlobs">0</div>
+      <div class="kpi-foot"><span class="kpi-sub" id="kBlobsSub">Offline blobs settled on reconnect</span><svg class="spark" id="sparkBlobs" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+    </div>
+    <div class="kpi k-red" id="kpiAttacks" role="button" tabindex="0" title="Show blocked activity">
+      <div class="kpi-head"><span>Attacks blocked</span><span data-icon="shieldX"></span></div>
+      <div class="kpi-value" id="kAttacks">0</div>
+      <div class="kpi-foot"><span class="kpi-sub" id="kAttacksSub">Shield armed</span></div>
+    </div>
+    <div class="kpi k-violet" id="kpiUsers" role="button" tabindex="0" title="Show the AI trust engine">
+      <div class="kpi-head"><span>Active users</span><span data-icon="users"></span></div>
+      <div class="kpi-value" id="kUsers">0</div>
+      <div class="kpi-foot"><span class="kpi-sub" id="kUsersSub">Scored by the AI risk model</span></div>
+    </div>
+  </section>
+
+  <main class="grid">
+    <section class="panel feed-panel" aria-label="Live activity">
+      <div class="panel-head">
+        <h2 style="--hc:var(--green2)"><span data-icon="activity"></span>Live activity</h2>
+        <div class="filters" id="filters" role="group" aria-label="Filter activity">
+          <button class="chip on" type="button" data-filter="all" aria-pressed="true">All <span class="n" data-n="all">0</span><kbd>1</kbd></button>
+          <button class="chip" type="button" data-filter="pay" aria-pressed="false">Payments <span class="n" data-n="pay">0</span><kbd>2</kbd></button>
+          <button class="chip" type="button" data-filter="blocked" aria-pressed="false">Blocked <span class="n" data-n="blocked">0</span><kbd>3</kbd></button>
+          <button class="chip" type="button" data-filter="ai" aria-pressed="false">AI &amp; trust <span class="n" data-n="ai">0</span><kbd>4</kbd></button>
+          <button class="chip" type="button" data-filter="voice" aria-pressed="false">Voice <span class="n" data-n="voice">0</span><kbd>5</kbd></button>
+        </div>
+      </div>
+      <div class="paused-bar" id="pausedBar" role="button" tabindex="0" hidden><span data-icon="pause"></span><span>Feed paused · <b id="queuedN">0</b> new events waiting</span><span>Resume <kbd>Space</kbd></span></div>
+      <div class="panel-body" id="feed" data-filter="all" aria-live="off">
+        <p class="empty" id="feedEmpty"><span data-icon="activity"></span><b>Waiting for payments</b><span>Offline payments appear here the moment a phone syncs.</span></p>
+      </div>
+    </section>
+
+    <section class="panel trust-panel" id="trustPanel" aria-label="AI trust engine">
+      <div class="panel-head">
+        <h2 style="--hc:var(--violet)"><span data-icon="spark"></span>AI trust engine</h2>
+        <span class="panel-sub" id="trustSub">Risk model sets each offline limit</span>
+      </div>
+      <div class="panel-body" id="trust">
+        <p class="empty" id="trustEmpty"><span data-icon="users"></span><b>No scored users yet</b><span>Limits appear as soon as the risk model scores an account.</span></p>
+      </div>
+    </section>
+
+    <section class="panel threat-panel" aria-label="Threats blocked">
+      <div class="panel-head">
+        <h2 style="--hc:var(--red2)"><span data-icon="shieldX"></span>Threats blocked</h2>
+        <span class="count-pill" id="threatCount">0</span>
+      </div>
+      <div class="rulebar" id="rulebar" hidden></div>
+      <div class="panel-body" id="threats" aria-live="polite">
+        <p class="empty shield" id="threatsEmpty"><span data-icon="shieldCheck"></span><b>All clear</b><span>Replay, forged-signature, over-limit and burst attacks surface here the instant they are stopped.</span></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span id="sbPoll">Polling every 2 s</span>
+    <span class="mono" id="sbCursor">cursor #0</span>
+    <span class="mono" id="sbEpoch"></span>
+    <div class="sb-keys" aria-hidden="true">
+      <span><kbd>1</kbd>–<kbd>5</kbd> filter</span>
+      <span><kbd>Space</kbd> pause</span>
+      <span><kbd>F</kbd> fullscreen</span>
+      <span><kbd>?</kbd> shortcuts</span>
+    </div>
+  </footer>
 </div>
 
-<main>
-  <section>
-    <h2>Live Payments</h2>
-    <div class="scroll" id="feed"><div class="empty">Waiting for the first payment…</div></div>
-  </section>
-  <section>
-    <h2>AI Trust Engine</h2>
-    <div class="scroll" id="trust"><div class="empty">No limits computed yet.</div></div>
-  </section>
-  <section>
-    <h2>Threats Blocked</h2>
-    <div class="scroll" id="threats"><div class="empty">Nothing blocked yet.</div></div>
-  </section>
-</main>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true">
+  <div class="drawer-head">
+    <div><div class="drawer-kicker" id="drawerKicker"></div><h3 id="drawerTitle"></h3></div>
+    <button class="icon-btn" id="drawerClose" type="button" title="Close (Esc)"><span class="sr">Close</span></button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<div class="popover" id="settings" role="dialog" aria-label="Display settings" hidden>
+  <div class="pop-sec">
+    <div class="pop-k">Text size</div>
+    <div class="seg" id="scaleSeg"></div>
+  </div>
+  <div class="pop-sec">
+    <label class="switch"><span>Alert sound on block</span><input type="checkbox" id="optSound"></label>
+    <label class="switch"><span>Animations</span><input type="checkbox" id="optMotion"></label>
+  </div>
+  <div class="pop-sec">
+    <button class="btn danger" type="button" id="btnReset">Reset live feed</button>
+    <p class="pop-hint">Clears events and counters on the server. Use between rehearsal runs.</p>
+    <button class="btn" type="button" id="btnHelp">Keyboard shortcuts</button>
+    <button class="btn" type="button" id="btnSignout">Forget dashboard token</button>
+  </div>
+</div>
+
+<div class="modal-wrap" id="help" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <h3 id="helpTitle">Keyboard shortcuts</h3>
+    <div class="keys">
+      <kbd>1</kbd><span>All activity</span>
+      <kbd>2</kbd><span>Payments only</span>
+      <kbd>3</kbd><span>Blocked only</span>
+      <kbd>4</kbd><span>AI &amp; trust events</span>
+      <kbd>5</kbd><span>Voice payments</span>
+      <kbd>Space</kbd><span>Pause / resume the feed</span>
+      <kbd>F</kbd><span>Fullscreen</span>
+      <kbd>S</kbd><span>Alert sound on block</span>
+      <kbd>+</kbd><span>Bigger text (<kbd>-</kbd> smaller)</span>
+      <kbd>Esc</kbd><span>Close panels</span>
+    </div>
+    <p class="note">Click any row, threat or user for the full story.</p>
+  </div>
+</div>
+
+<div class="gate" id="gate" hidden>
+  <form class="gate-card" id="gateForm" autocomplete="off">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="9" fill="#ff9933"/>
+      <path d="M6 21c3-7.2 17-7.2 20 0" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <path d="M5.5 21h21M11 21v-3.6M16 21v-5.2M21 21v-3.6" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <h1>SetuPay Live</h1>
+    <p>Enter the operator dashboard token to open the live feed.</p>
+    <label class="sr" for="gateInput">Dashboard token</label>
+    <input id="gateInput" type="password" placeholder="Dashboard token" spellcheck="false" autocomplete="off">
+    <button class="btn primary" type="submit">Open dashboard</button>
+    <p class="gate-err" id="gateErr" role="alert"></p>
+  </form>
+</div>
 
 <script>
-(function () {
-  var TOKEN  = new URLSearchParams(location.search).get('token') || '';
-  var cursor = 0, fails = 0, MAX_ROWS = 40, MAX_THREATS = 12;
-  var stats  = {settled_total_inr: -1, blobs_synced: -1, attacks_blocked: -1, active_users: -1};
+(() => {
+'use strict';
 
-  var $ = function (id) { return document.getElementById(id); };
+// ── Config ──────────────────────────────────────────────
+const POLL_MS = 2000;
+const FETCH_TIMEOUT_MS = 8000;
+const MAX_BACKOFF_MS = 10000;
+const MAX_ROWS = 160;
+const MAX_THREATS = 60;
+const MAX_EVENTS = 1500;
+const MAX_LIMIT = 5000;                 // top of the AI limit table
+const GROUP_WINDOW_S = 3;               // fold same-sender, same-reason blocks
+const BURST_WINDOW_S = 1.5;             // one sync request = one burst
+const TOKEN_KEY = 'setupay.ops.token';
+const PREFS_KEY = 'setupay.ops.prefs';
+const SCALES = [0.85, 1, 1.15, 1.3, 1.5];
+const FILTERS = ['all', 'pay', 'blocked', 'ai', 'voice'];
 
-  function inr(n) {
-    return '₹' + Number(n || 0).toLocaleString('en-IN', {maximumFractionDigits: 0});
-  }
-  function hhmmss(ts) {
-    var d = new Date((ts || 0) * 1000);
-    return d.toTimeString().slice(0, 8);
-  }
-  function clearEmpty(el) {
-    var e = el.querySelector('.empty');
-    if (e) e.remove();
-  }
-  function setNum(el, value, text) {
-    if (stats[value.key] === value.n) return;
-    stats[value.key] = value.n;
-    el.textContent = text;
-    el.classList.remove('flashnum');
-    void el.offsetWidth;             // restart the CSS animation
-    el.classList.add('flashnum');
-  }
+// ── Safe templating: every interpolation is escaped unless it is itself
+//    the output of html`` or icon(). ──────────────────────
+const RAW = Symbol('raw');
+const raw = s => ({ [RAW]: String(s) });
+const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function part(v) {
+  if (v == null || v === false) return '';
+  if (Array.isArray(v)) return v.map(part).join('');
+  if (typeof v === 'object' && RAW in v) return v[RAW];
+  return esc(v);
+}
+function html(strings, ...vals) {
+  let out = strings[0];
+  for (let i = 0; i < vals.length; i++) out += part(vals[i]) + strings[i + 1];
+  return raw(out);
+}
+const setHTML = (el, frag) => { el.innerHTML = frag[RAW]; };
 
-  var toastTimer = null;
-  function toast(msg) {
-    var t = $('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 4000);
-  }
+const ICON = {
+  qr: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h1M20 14h1"/>',
+  ble: '<path d="M7 7l10 10-5 5V2l5 5L7 17"/>',
+  sync: '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  shieldX: '<path d="M12 3l8 3v6c0 4.6-3.4 8.4-8 9-4.6-.6-8-4.4-8-9V6z"/><path d="M9.5 9.5l5 5m0-5l-5 5"/>',
+  shieldCheck: '<path d="M12 3l8 3v6c0 4.6-3.4 8.4-8 9-4.6-.6-8-4.4-8-9V6z"/><path d="M8.5 12.2l2.4 2.4 4.6-4.8"/>',
+  spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+  key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2m-4 4l3 3m-6 0l2 2"/>',
+  replay: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 8v4l3 2"/>',
+  pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  gauge: '<path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>',
+  zap: '<path d="M13 2L3 14h9l-1 8 10-12h-9z"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  phoneX: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 9l4 4m0-4l-4 4"/>',
+  check: '<path d="M20 6L9 17l-5-5"/>',
+  trendUp: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+  trendDown: '<path d="M3 7l6 6 4-4 8 8"/><path d="M14 17h7v-7"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  rupee: '<path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3a5 5 0 0 0 0-10"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  play: '<path d="M7 4l13 8-13 8z"/>',
+  sound: '<path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+  mute: '<path d="M11 5L6 9H2v6h4l5 4z"/><path d="M22 9l-6 6m0-6l6 6"/>',
+  expand: '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>',
+  shrink: '<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  x: '<path d="M18 6L6 18M6 6l12 12"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  wifi: '<path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a15 15 0 0 1 20 0"/><path d="M12 20h.01"/>',
+};
+const icon = name => raw(`<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON[name] || ''}</svg>`);
 
-  // ── Live payments column ──────────────────────────────
-  var VERDICT = {
-    blob_received:         ['RECEIVED',  'info',  ''],
-    settled:               ['SETTLED',   'ok',    'settled'],
-    settlement_confirmed:  ['CONFIRMED', 'info',  'confirmed'],
-    online_payment:        ['ONLINE',    'ok',    'settled'],
-    rejected:              ['BLOCKED',   'no',    'rejected'],
-    signature_invalid:     ['UNSIGNED',  'warn',  'sig']
-    // fraud_flag deliberately absent: it is collapsed per (sender, rule) and
-    // belongs in the THREATS column. Every blob already gets exactly one feed
-    // row via blob_received -> settled / rejected.
-  };
+// ── DOM ─────────────────────────────────────────────────
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const el = {
+  modes: $('#modes'), conn: $('#conn'), connText: $('#connText'), clock: $('#clock'),
+  btnPause: $('#btnPause'), btnSound: $('#btnSound'), btnFull: $('#btnFull'), btnSettings: $('#btnSettings'),
+  kSettled: $('#kSettled'), kBlobs: $('#kBlobs'), kAttacks: $('#kAttacks'), kUsers: $('#kUsers'),
+  kSettledSub: $('#kSettledSub'), kBlobsSub: $('#kBlobsSub'), kAttacksSub: $('#kAttacksSub'), kUsersSub: $('#kUsersSub'),
+  sparkSettled: $('#sparkSettled'), sparkBlobs: $('#sparkBlobs'),
+  feed: $('#feed'), feedEmpty: $('#feedEmpty'), filters: $('#filters'), pausedBar: $('#pausedBar'), queuedN: $('#queuedN'),
+  trust: $('#trust'), trustEmpty: $('#trustEmpty'), trustSub: $('#trustSub'), trustPanel: $('#trustPanel'),
+  threats: $('#threats'), threatsEmpty: $('#threatsEmpty'), threatCount: $('#threatCount'), rulebar: $('#rulebar'),
+  sbPoll: $('#sbPoll'), sbCursor: $('#sbCursor'), sbEpoch: $('#sbEpoch'),
+  toasts: $('#toasts'), scrim: $('#scrim'), drawer: $('#drawer'), drawerKicker: $('#drawerKicker'),
+  drawerTitle: $('#drawerTitle'), drawerBody: $('#drawerBody'), drawerClose: $('#drawerClose'),
+  settings: $('#settings'), scaleSeg: $('#scaleSeg'), optSound: $('#optSound'), optMotion: $('#optMotion'),
+  btnReset: $('#btnReset'), btnHelp: $('#btnHelp'), btnSignout: $('#btnSignout'), help: $('#help'),
+  gate: $('#gate'), gateForm: $('#gateForm'), gateInput: $('#gateInput'), gateErr: $('#gateErr'),
+};
+$$('[data-icon]').forEach(node => { node.outerHTML = icon(node.dataset.icon)[RAW]; });
 
-  var rowsByBlob = {};
+// ── Storage (may be unavailable: private windows, blocked site data) ──
+function storageArea(kind) {
+  try { return kind === 'session' ? window.sessionStorage : window.localStorage; } catch (_) { return null; }
+}
+const store = {
+  get(key, fallback, kind) {
+    try { const v = storageArea(kind)?.getItem(key); return v == null ? fallback : JSON.parse(v); } catch (_) { return fallback; }
+  },
+  set(key, value, kind) { try { storageArea(kind)?.setItem(key, JSON.stringify(value)); } catch (_) {} },
+  del(key, kind) { try { storageArea(kind)?.removeItem(key); } catch (_) {} },
+};
 
-  function addFeedRow(e) {
-    var spec = VERDICT[e.kind];
-    if (!spec) return;
-    var feed = $('feed');
-    clearEmpty(feed);
+// ── Formatting ──────────────────────────────────────────
+const nfInt = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
+const nfExact = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const num = v => Number(v) || 0;
+const fmtInt = v => nfInt.format(Math.round(num(v)));
+const inr = v => '₹' + nfInt.format(Math.round(num(v)));
+const inrExact = v => '₹' + nfExact.format(num(v));
+const nowS = () => Date.now() / 1000;
+const hms = ts => ts ? new Date(ts * 1000).toLocaleTimeString('en-GB', { hour12: false }) : '—';
+function ago(ts) {
+  const s = Math.max(0, Math.round(nowS() - ts));
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ${m % 60}m ago`;
+}
+const humanize = s => { const t = String(s || '').replace(/_/g, ' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : 'Unknown'; };
+function hue(name) { let h = 0; for (const ch of String(name)) h = (h * 31 + ch.codePointAt(0)) % 360; return h; }
+const initial = name => (String(name || '?').trim()[0] || '?').toUpperCase();
 
-    var who = e.receiver && e.receiver !== '\u2014'
-      ? (e.sender || '?') + ' \u2192 ' + e.receiver
-      : (e.sender || '?');
+// ── Vocabulary ──────────────────────────────────────────
+const ROUTES = { qr: ['QR', 'qr'], ble: ['Bluetooth', 'ble'], sync: ['Sync', 'sync'], online: ['Online', 'globe'] };
+// Server strings index these tables; only own keys count ("constructor" is not a route).
+const own = (obj, k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(obj, k);
+const route = m => own(ROUTES, m) ? ROUTES[m] : [humanize(m || 'sync'), 'sync'];
+const RULES = {
+  replay: { label: 'Replay attack', title: 'Replay attack blocked', short: 'Replay', icon: 'replay',
+    how: 'Every offline payment carries a single-use nonce and ID. A copy of a payment that already settled is recognised and dropped, so nobody is charged twice.' },
+  signature: { label: 'Forged signature', title: 'Forged payment blocked', short: 'Forged', icon: 'pen',
+    how: 'Each payment is signed on the sender’s phone with an Ed25519 key that never leaves the device. Changing any field — amount, receiver, time — breaks the signature.' },
+  over_limit: { label: 'Over the limit', title: 'Over-limit payment blocked', short: 'Over limit', icon: 'gauge',
+    how: 'Before a phone goes offline the AI gives the account a spending limit. Payments above it, or above the NPCI offline caps, are held back.' },
+  velocity: { label: 'Burst attack', title: 'Burst attack blocked', short: 'Burst', icon: 'zap',
+    how: 'Too many offline payments from one account in a short window looks like a cloned or drained device, so the extra payments are stopped.' },
+  heuristics: { label: 'Anomaly', title: 'Anomalous payment blocked', short: 'Anomaly', icon: 'eye',
+    how: 'Pattern checks on amount, timing and account history catch payments that do not look like this account’s normal behaviour.' },
+};
+const REASONS = {
+  duplicate: ['Replay', 'replay'],
+  invalid_signature: ['Forged signature', 'signature'],
+  unsigned_device: ['Unregistered device', 'signature'],
+  limit_exceeded: ['Over limit', 'over_limit'],
+  velocity: ['Burst', 'velocity'],
+  fraud: ['Anomaly', 'heuristics'],
+  insufficient_balance: ['Insufficient balance', null],
+  invalid_amount: ['Invalid amount', null],
+  sender_not_found: ['Unknown sender', null],
+};
+const reasonLabel = r => own(REASONS, r) ? REASONS[r][0] : humanize(r);
+const reasonRule = r => own(REASONS, r) ? REASONS[r][1] : null;
+const BANDS = [[0, 0.2, 5000, 'Trusted', 't-trusted'], [0.2, 0.4, 3000, 'Good', 't-good'], [0.4, 0.6, 1500, 'Watch', 't-watch'],
+  [0.6, 0.8, 500, 'Caution', 't-caution'], [0.8, 0.9, 100, 'High risk', 't-high'], [0.9, Infinity, 0, 'Frozen', 't-frozen']];
+const TIER_CLASSES = BANDS.map(b => b[4]);
+const bandFor = risk => BANDS.find(b => risk >= b[0] && risk < b[1]) || BANDS[BANDS.length - 1];
+const explainerName = () => (S.mode && S.mode.explainer === 'llm') ? 'AI explainer' : 'Rule explainer';
 
-    var tag = '';
-    if (e.handoff_method) {
-      var route = e.handoff_method === 'qr' ? '\uD83D\uDCF7 QR'
-                : e.handoff_method === 'ble' ? '\uD83D\uDCE1 BLE'
-                : e.handoff_method === 'online' ? '\uD83C\uDF10 online' : '\u2601 sync';
-      tag = '<span class="tag">' + (e.offline === false ? '' : '\uD83D\uDCF6 offline\u00B7') +
-            route + '</span>';
-    } else if (e.reason) {
-      tag = '<span class="tag">' + e.reason + '</span>';
+// ── State ───────────────────────────────────────────────
+const S = {
+  token: null, cursor: 0, epoch: null, timer: 0, inflight: false, stopped: false,
+  failures: 0, lastOk: 0, rtt: 0, conn: 'connecting', initial: true,
+  paused: false, queue: [], filter: 'all', rule: null,
+  events: new Map(),     // id → event, for drawers
+  rows: new Map(),       // key → row model, oldest first
+  blobRow: new Map(),    // blob_id → row key of the payment
+  resend: new Map(),     // blob_id → re-upload of a settled blob, awaiting its verdict
+  lastReject: null,      // the row a following identical block folds into
+  threats: new Map(),    // key → threat model
+  cardFor: new Map(),    // "sender|rule" → latest threat model
+  ruleCounts: {},
+  users: new Map(),      // name → trust model
+  stats: null, mode: null, modeSig: '',
+  drawerRef: null, lastFocus: null, seq: 0, justReset: false,
+  prefs: Object.assign({ scale: 1, sound: false, motion: true }, store.get(PREFS_KEY, {})),
+};
+const reduced = () => !S.prefs.motion || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function retrigger(node, cls) {
+  if (!node || reduced()) return;
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+}
+function setClasses(node, prefixes, add) {
+  for (const c of Array.from(node.classList)) if (prefixes.some(p => c.startsWith(p))) node.classList.remove(c);
+  node.classList.add(...add);
+}
+
+// ── Feed ingestion ──────────────────────────────────────
+function remember(e) {
+  S.events.set(e.id, e);
+  if (S.events.size > MAX_EVENTS) S.events.delete(S.events.keys().next().value);
+}
+
+function ingest(data) {
+  const quiet = S.initial;
+  const events = data.events || [];
+  if (data.mode) renderModes(data.mode);
+  for (const e of events) {
+    // Advance per event: one malformed event must not pin the cursor and
+    // replay everything before it on every retry.
+    S.cursor = Math.max(S.cursor, num(e && e.id));
+    try {
+      remember(e);
+      if (S.paused && !quiet) S.queue.push(e);
+      else apply(e, quiet);
+    } catch (err) {
+      console.warn('ops dashboard: skipped event', e && e.id, err);
     }
+  }
+  S.cursor = Math.max(S.cursor, num(data.cursor));
+  if (Array.isArray(data.limits)) renderTrust(data.limits, quiet);
+  if (data.stats) renderStats(data.stats, quiet);
+  if (S.paused) el.queuedN.textContent = S.queue.length;
+  refreshDerived();
+  updateCounts();
+  if (events.length && S.drawerRef) renderDrawer();
+  el.sbCursor.textContent = `cursor #${S.cursor}`;
+  el.sbEpoch.textContent = S.epoch ? `feed ${S.epoch.slice(0, 6)}` : '';
+  S.initial = false;
+}
 
-    var html =
-      '<span class="t">' + hhmmss(e.ts) + '</span>' +
-      '<span class="who">' + who + '</span>' +
-      tag +
-      '<span class="amt">' + inr(e.amount) + '</span>' +
-      '<span class="verdict ' + spec[1] + '">' + spec[0] + '</span>';
-
-    // A blob keeps ONE row for its whole life: it lands as RECEIVED and then
-    // flips in place to SETTLED / BLOCKED. Two rows per payment would make the
-    // feed unreadable at the back of a hall.
-    var existing = e.blob_id && rowsByBlob[e.blob_id];
-    if (existing && document.body.contains(existing)) {
-      existing.className = 'row ' + (spec[2] || '');
-      void existing.offsetWidth;
-      existing.innerHTML = html;
-      return;
+function apply(e, quiet) {
+  switch (e.kind) {
+    case 'blob_received': return upsertBlob(e, 'received', quiet);
+    case 'signature_invalid': return upsertBlob(e, 'unsigned', quiet);
+    case 'settled': return upsertBlob(e, 'settled', quiet);
+    case 'settlement_confirmed': return upsertBlob(e, 'confirmed', quiet);
+    case 'rejected': return onRejected(e, quiet);
+    case 'fraud_flag': return addThreat(e, quiet);
+    case 'online_payment': return insertRow(newRow(`e:${e.id}`, 'online', e), quiet);
+    case 'limit_changed': {
+      const u = userModel(e.user);
+      if (num(e.old_limit) > 0) pushHistory(u, e.ts - 0.001, num(e.old_limit));
+      pushHistory(u, e.ts, num(e.new_limit));
+      return insertRow(newRow(`e:${e.id}`, 'limit', e), quiet);
     }
+    case 'voice_transcribed': return insertRow(newRow(`e:${e.id}`, 'voice', e), quiet);
+    case 'device_key_registered': return insertRow(newRow(`e:${e.id}`, 'key', e), quiet);
+    case 'device_evicted': return insertRow(newRow(`e:${e.id}`, 'evict', e), quiet);
+    default: return insertRow(newRow(`e:${e.id}`, 'generic', e), quiet);
+  }
+}
 
-    var row = document.createElement('div');
-    row.className = 'row new ' + (spec[2] || '');
-    row.innerHTML = html;
-    if (e.blob_id) rowsByBlob[e.blob_id] = row;
+function newRow(key, type, e) {
+  const d = { key, type, el: null, cats: [], events: [], times: {}, count: 1, total: 0, blobs: [], state: type, lastTs: 0 };
+  if (e) absorb(d, e);
+  return d;
+}
+function absorb(d, e) {
+  d.events.push(e.id);
+  d.lastTs = Math.max(d.lastTs, e.ts || 0);
+  d.ev = e;
+  if (e.sender) d.sender = e.sender;
+  if (e.receiver && e.receiver !== '—') d.receiver = e.receiver;
+  if (e.user) d.user = e.user;
+  if (e.amount != null) d.amount = num(e.amount);
+  if (e.handoff_method) d.route = e.handoff_method;
+  if (typeof e.offline === 'boolean') d.offline = e.offline;
+}
 
-    feed.insertBefore(row, feed.firstChild);
-    while (feed.children.length > MAX_ROWS) {
-      var dropped = feed.lastChild;
-      feed.removeChild(dropped);
-      for (var k in rowsByBlob) {
-        if (rowsByBlob[k] === dropped) delete rowsByBlob[k];
+const RANK = { received: 1, unsigned: 2, settled: 3, confirmed: 4 };
+function upsertBlob(e, state, quiet) {
+  let d = S.rows.get(S.blobRow.get(e.blob_id));
+  // A second upload of a payment that already settled is either the receiver
+  // confirming it or a replay. Hold it until the next event says which:
+  // settlement_confirmed lands on the original row, a rejection gets a row of
+  // its own and borrows this event's route and receiver.
+  if (d && state === 'received' && d.state !== 'rejected' && RANK[d.state] >= RANK.settled) {
+    S.resend.set(e.blob_id, e);
+    if (S.resend.size > 200) S.resend.delete(S.resend.keys().next().value);
+    return;
+  }
+  if (state === 'confirmed') S.resend.delete(e.blob_id);
+  // A blob that was blocked and is uploaded again is a new attempt.
+  const fresh = !d || d.state === 'rejected';
+  if (fresh) {
+    d = newRow(`b:${e.blob_id}:${e.id}`, 'blob');
+    d.state = 'received';
+    d.blobs = [e.blob_id];
+    S.blobRow.set(e.blob_id, d.key);
+  }
+  absorb(d, e);
+  d.times[state] = e.ts;
+  if (state === 'unsigned') d.sigWarn = true;
+  if (state === 'settled') { d.sig = !!e.signature_verified; if (e.handoff_method === 'online') d.offline = false; }
+  if (RANK[state] > (RANK[d.state] || 0)) d.state = state;
+  if (fresh) insertRow(d, quiet);
+  else paintRow(d, !quiet);
+}
+
+function onRejected(e, quiet) {
+  const rule = reasonRule(e.reason);
+  if (rule || e.threat_id != null) growThreat(e, rule, quiet);
+
+  const resend = S.resend.get(e.blob_id);
+  S.resend.delete(e.blob_id);
+  let mine = S.rows.get(S.blobRow.get(e.blob_id));
+  if (mine && mine.state !== 'received') mine = null;   // never relabel a finished payment
+  const g = S.lastReject;
+  const group = g && S.rows.get(g.key);
+  if (group && group !== mine && g.sender === e.sender && g.reason === e.reason && e.ts - g.ts < GROUP_WINDOW_S) {
+    if (mine) removeRow(mine);
+    group.count += 1;
+    group.total += num(e.amount);
+    group.blobs.push(e.blob_id);
+    group.events.push(...(mine ? mine.events : []), e.id);
+    group.times.rejected = e.ts;
+    group.lastTs = e.ts;
+    if (!S.rows.has(S.blobRow.get(e.blob_id))) S.blobRow.set(e.blob_id, group.key);
+    g.ts = e.ts;
+    paintRow(group, !quiet);
+    if (!quiet) retrigger(group.el.querySelector('.mult'), 'bump');
+    return;
+  }
+
+  let d = mine;
+  const fresh = !d;
+  if (fresh) {
+    d = newRow(`b:${e.blob_id}:${e.id}`, 'blob');
+    d.blobs = [e.blob_id];
+    if (resend) absorb(d, resend);
+    if (!S.rows.has(S.blobRow.get(e.blob_id))) S.blobRow.set(e.blob_id, d.key);
+  }
+  absorb(d, e);
+  d.state = 'rejected';
+  d.reason = e.reason;
+  d.detail = e.reason_detail;
+  d.times.rejected = e.ts;
+  d.total = num(e.amount);
+  S.lastReject = { key: d.key, sender: e.sender, reason: e.reason, ts: e.ts };
+  if (fresh) insertRow(d, quiet);
+  else paintRow(d, !quiet);
+}
+
+function insertRow(d, quiet) {
+  d.el = document.createElement('div');
+  d.el.className = 'row';
+  d.el.dataset.key = d.key;
+  d.el.tabIndex = 0;
+  d.el.setAttribute('role', 'button');
+  S.rows.set(d.key, d);
+  paintRow(d, false);
+  el.feed.prepend(d.el);
+  if (!quiet) retrigger(d.el, 'enter');
+  while (S.rows.size > MAX_ROWS) removeRow(S.rows.values().next().value);
+}
+function removeRow(d) {
+  d.el?.remove();
+  S.rows.delete(d.key);
+  for (const b of d.blobs) if (S.blobRow.get(b) === d.key) S.blobRow.delete(b);
+  if (S.lastReject && S.lastReject.key === d.key) S.lastReject = null;
+}
+
+function rowView(d) {
+  const time = html`<time>${hms(d.lastTs)}</time>`;
+  switch (d.type) {
+    case 'blob': {
+      const [routeName, routeIcon] = route(d.route);
+      const st = d.state;
+      const blocked = st === 'rejected';
+      const label = { received: 'RECEIVED', unsigned: 'UNSIGNED', settled: 'SETTLED', confirmed: 'CONFIRMED', rejected: 'BLOCKED' }[st];
+      const step = { received: 1, unsigned: 1, settled: 2, confirmed: 3 }[st];
+      const offline = d.offline !== false && d.route !== 'online';
+      return {
+        tone: st,
+        cats: blocked ? ['blocked'] : d.sigWarn ? ['pay', 'blocked'] : ['pay'],
+        icon: blocked ? 'shieldX' : routeIcon,
+        title: html`${d.sender || 'Unknown'}${d.receiver ? html`<span class="arrow">→</span>${d.receiver}` : ''}${d.count > 1 ? html`<span class="mult">×${d.count}</span>` : ''}`,
+        meta: html`<span class="tag">${icon(routeIcon)}${offline ? 'Offline' : 'Online'} · ${routeName}</span>${
+          blocked ? html`<span class="tag red">${reasonLabel(d.reason)}</span>` : ''}${
+          !blocked && d.sig ? html`<span class="tag green">${icon('check')}Ed25519</span>` : ''}${
+          !blocked && d.sigWarn ? html`<span class="tag amber">signature not verified</span>` : ''}${
+          !blocked && offline ? html`<span class="steps s-${step}" title="Received → Settled → Confirmed"><i></i><i></i><i></i></span>` : ''}${time}`,
+        amount: inr(d.count > 1 ? d.total : d.amount),
+        badge: label,
+      };
+    }
+    case 'online':
+      return {
+        tone: 'online', cats: ['pay'], icon: 'globe',
+        title: html`${d.sender}<span class="arrow">→</span>${d.receiver || '—'}`,
+        meta: html`<span class="tag">${icon('globe')}Online payment</span>${time}`,
+        amount: inr(d.amount), badge: 'ONLINE',
+      };
+    case 'limit': {
+      const e = d.ev, diff = num(e.new_limit) - num(e.old_limit), down = diff < 0;
+      if (num(e.old_limit) <= 0) {
+        return {
+          tone: 'ai', cats: ['ai'], icon: 'spark',
+          title: html`AI issued ${e.user} a limit`,
+          meta: html`<span class="tag violet">${inr(e.new_limit)} offline limit</span><span class="tag">risk ${num(e.risk_score).toFixed(2)}</span>${time}`,
+          amount: inr(e.new_limit),
+          badge: 'AI LIMIT',
+        };
       }
+      return {
+        tone: 'ai', cats: ['ai'], icon: down ? 'trendDown' : 'trendUp',
+        title: html`AI repriced ${e.user}`,
+        meta: html`<span class="tag violet">${inr(e.old_limit)} → ${inr(e.new_limit)}</span><span class="tag">risk ${num(e.risk_score).toFixed(2)}</span>${time}`,
+        amount: html`<span class="${down ? 'neg' : 'pos'}">${down ? '−' : '+'}${inr(Math.abs(diff))}</span>`,
+        badge: 'AI LIMIT',
+      };
     }
-  }
-
-  // ── Voice payments (Feature H1/H4) ────────────────────
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
-      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
-    });
-  }
-
-  function addVoiceRow(e) {
-    var feed = $('feed');
-    clearEmpty(feed);
-
-    var ok = e.ok !== false;
-    var pill = e.provider === 'gnani'
-      ? '<span class="pill gnani">Powered by Gnani Prisma</span>'
-      : '<span class="pill mock">mock</span>';
-    var sub = esc(e.user || '') + (ok ? '' : (e.user ? ' · ' : '') + 'fallback to on-device');
-
-    var row = document.createElement('div');
-    row.className = 'row new voice' + (ok ? '' : ' fallback');
-    row.innerHTML =
-      '<span class="t">' + hhmmss(e.ts) + '</span>' +
-      '<span class="who">🎙 Voice payment heard' +
-        '<span class="vmeta"> · ' + esc(e.lang) + ' · ' +
-          Number(e.latency_ms || 0).toLocaleString('en-IN') + ' ms</span>' +
-        (sub ? '<span class="vsub">' + sub + '</span>' : '') +
-      '</span>' +
-      pill +
-      (ok && e.amount ? '<span class="amt">' + inr(e.amount) + '</span>'
-                      : '<span class="amt"></span>') +
-      '<span class="verdict ' + (ok ? 'info' : 'muted') + '">' +
-        (ok ? 'HEARD' : 'FALLBACK') + '</span>';
-
-    feed.insertBefore(row, feed.firstChild);
-    while (feed.children.length > MAX_ROWS) {
-      var dropped = feed.lastChild;
-      feed.removeChild(dropped);
-      for (var k in rowsByBlob) {
-        if (rowsByBlob[k] === dropped) delete rowsByBlob[k];
-      }
+    case 'voice': {
+      const e = d.ev, gnani = e.provider === 'gnani';
+      return {
+        tone: 'voice', cats: ['voice'], icon: 'mic',
+        title: e.ok ? html`Voice payment heard${e.user ? html`<span class="arrow">·</span>${e.user}` : ''}` : html`Voice fell back on-device${e.user ? html`<span class="arrow">·</span>${e.user}` : ''}`,
+        meta: html`<span class="tag ${gnani ? 'gnani' : ''}">${gnani ? 'Powered by Gnani Prisma' : 'Mock speech model'}</span>${
+          e.lang ? html`<span class="tag">${e.lang}</span>` : ''}${
+          e.latency_ms != null ? html`<span class="tag">${fmtInt(e.latency_ms)} ms</span>` : ''}${
+          !e.ok && e.reason ? html`<span class="tag amber">${humanize(e.reason)}</span>` : ''}${time}`,
+        amount: e.amount != null ? inr(e.amount) : '—',
+        badge: e.ok ? 'HEARD' : 'FALLBACK',
+      };
     }
+    case 'key':
+      return {
+        tone: 'key', cats: ['ai'], icon: 'key',
+        title: html`${d.ev.user} ${d.ev.rotated ? 'rotated' : 'registered'} a device key`,
+        meta: html`<span class="tag green">${icon('shieldCheck')}Ed25519 trust root</span>${time}`,
+        amount: '', badge: d.ev.rotated ? 'ROTATED' : 'KEY',
+      };
+    case 'evict':
+      return {
+        tone: 'evict', cats: ['blocked'], icon: 'phoneX',
+        title: html`${d.ev.user}'s oldest device signed out`,
+        meta: html`<span class="tag amber">${humanize(d.ev.reason)}</span><span class="tag">${d.ev.device}</span>${time}`,
+        amount: '', badge: 'EVICTED',
+      };
+    default:
+      return {
+        tone: 'generic', cats: ['ai'], icon: 'activity',
+        title: humanize(d.ev && d.ev.kind), meta: time, amount: '', badge: 'EVENT',
+      };
   }
+}
 
-  // ── Threats column ────────────────────────────────────
-  var RULE_LABEL = {
-    replay:     '🚫 Replay attack blocked',
-    signature:  '🚫 Forged payment blocked',
-    over_limit: '🚫 Over-limit payment blocked',
-    velocity:   '🚫 Burst attack blocked',
-    heuristics: '🚫 Fraud pattern blocked'
+function paintRow(d, flash) {
+  if (!d.el) return;
+  const v = rowView(d);
+  d.cats = v.cats;
+  setClasses(d.el, ['st-', 'cat-'], [`st-${v.tone}`, ...v.cats.map(c => `cat-${c}`)]);
+  setHTML(d.el, html`<div class="row-ico">${icon(v.icon)}</div><div class="row-main"><div class="row-title">${v.title}</div><div class="row-meta">${v.meta}</div></div><div class="row-amt">${v.amount}</div><div class="badge">${v.badge}</div>`);
+  if (flash) retrigger(d.el, 'flash');
+}
+
+function updateCounts() {
+  const c = { all: 0, pay: 0, blocked: 0, ai: 0, voice: 0 };
+  for (const d of S.rows.values()) { c.all++; for (const k of d.cats) c[k]++; }
+  $$('[data-n]', el.filters).forEach(n => { n.textContent = fmtInt(c[n.dataset.n]); });
+  const visible = S.filter === 'all' ? c.all : c[S.filter];
+  el.feedEmpty.hidden = visible > 0;
+  if (!visible) {
+    const copy = {
+      all: ['activity', 'Waiting for payments', 'Offline payments appear here the moment a phone syncs.'],
+      pay: ['sync', 'No payments yet', 'Settled and online payments will show up here.'],
+      blocked: ['shieldCheck', 'Nothing blocked', 'The shield is armed — blocked payments land here.'],
+      ai: ['spark', 'No AI events yet', 'Limit repricing and device-key registrations appear here.'],
+      voice: ['mic', 'No voice payments yet', 'Say “Jyati ko 250 bhejo” in the app to see one.'],
+    }[S.filter];
+    setHTML(el.feedEmpty, html`${icon(copy[0])}<b>${copy[1]}</b><span>${copy[2]}</span>`);
+    el.feed.append(el.feedEmpty);
+  }
+}
+
+// ── Threats ─────────────────────────────────────────────
+function addThreat(e, quiet) {
+  const rule = own(RULES, e.rule) ? e.rule : 'heuristics';
+  // The server emits each card right after its own first block. If the
+  // previous card for this sender and rule just counted that block, it
+  // belonged to this card instead (two requests close together).
+  const prev = S.cardFor.get(`${e.sender}|${rule}`);
+  if (prev && prev.lastGrowId === e.id - 1) {
+    prev.seen -= 1;
+    prev.lastGrowId = 0;
+    prev.count = Math.max(1, num(prev.ev.blocked_count) || 1, prev.seen);
+    paintThreat(prev);
+  }
+  const t = {
+    key: `t:${e.id}`, ev: e, rule, advisory: e.reason === 'flagged_not_blocked',
+    count: Math.max(1, num(e.blocked_count) || 1), seen: 1, lastTs: e.ts, el: document.createElement('article'),
   };
-
-  var threatCards = {};
-
-  function addThreat(e) {
-    var box = $('threats');
-    clearEmpty(box);
-    var label = RULE_LABEL[e.rule] || '🚫 Payment blocked';
-    if (e.blocked_count > 1) label += ' ×' + e.blocked_count;
-
-    var card = document.createElement('div');
-    card.className = 'threat';
-    card.innerHTML =
-      '<div class="hd">' + label + '<span class="t" style="margin-left:auto">' +
-        hhmmss(e.ts) + '</span></div>' +
-      '<div class="dt">' + (e.detail || e.reason_detail || '') + '</div>' +
-      '<div class="ai">AI EXPLAINER · ' + (e.sender || 'unknown') +
-        ' · ' + inr(e.amount) + '</div>';
-
-    // Re-poll of a growing burst refreshes the same card instead of stacking.
-    var prior = threatCards[e.id];
-    if (prior && document.body.contains(prior)) {
-      prior.replaceWith(card);
-      threatCards[e.id] = card;
-      return;
-    }
-    threatCards[e.id] = card;
-    box.insertBefore(card, box.firstChild);
-    while (box.children.length > MAX_THREATS) box.removeChild(box.lastChild);
-    toast(label + ' — ' + (e.detail || ''));
+  t.el.className = `threat r-${rule}${t.advisory ? ' advisory' : ''}`;
+  t.el.dataset.key = t.key;
+  t.el.tabIndex = 0;
+  t.el.setAttribute('role', 'button');
+  S.threats.set(t.key, t);
+  S.cardFor.set(`${e.sender}|${rule}`, t);
+  S.ruleCounts[rule] = (S.ruleCounts[rule] || 0) + 1;
+  paintThreat(t);
+  el.threats.prepend(t.el);
+  while (S.threats.size > MAX_THREATS) {
+    const old = S.threats.values().next().value;
+    old.el.remove();
+    S.threats.delete(old.key);
   }
-
-  // ── Trust engine column ───────────────────────────────
-  var MAX_LIMIT = 5000;
-  function renderTrust(limits, bumped) {
-    var box = $('trust');
-    if (!limits || !limits.length) return;
-    clearEmpty(box);
-    box.innerHTML = limits.map(function (u) {
-      var pct = Math.max(2, Math.min(100, (u.limit / MAX_LIMIT) * 100));
-      var risk = (u.risk_score * 100).toFixed(0);
-      return '<div class="user' + (bumped[u.user] ? ' bump' : '') + '">' +
-        '<div class="top"><span class="name">' + u.user + '</span>' +
-        '<span class="lim">' + inr(u.limit) + '</span></div>' +
-        '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
-        '<div class="risk">trust score <b>' + (100 - risk) + '/100</b> · ' +
-          'risk ' + (u.risk_score).toFixed(2) + '</div>' +
-      '</div>';
-    }).join('');
-  }
-
-  // ── Poll loop ─────────────────────────────────────────
-  function connOK(ok) {
-    var c = $('conn');
-    c.classList.toggle('bad', !ok);
-    $('connText').textContent = ok ? 'online' : 'connection lost — retrying';
-  }
-
-  function tick() {
-    fetch('/api/ops/feed?since=' + cursor + '&token=' + encodeURIComponent(TOKEN))
-      .then(function (r) {
-        if (!r.ok) throw new Error(r.status === 403 ? 'bad token' : 'http ' + r.status);
-        return r.json();
-      })
-      .then(function (d) {
-        fails = 0; connOK(true);
-        cursor = d.cursor || cursor;
-
-        var bumped = {};
-        (d.events || []).forEach(function (e) {
-          if (e.kind === 'voice_transcribed') addVoiceRow(e);
-          else addFeedRow(e);
-          if (e.kind === 'fraud_flag') addThreat(e);
-          if (e.kind === 'limit_changed') bumped[e.user] = true;
-        });
-
-        var s = d.stats || {};
-        setNum($('sSettled'), {key: 'settled_total_inr', n: s.settled_total_inr}, inr(s.settled_total_inr));
-        setNum($('sBlobs'),   {key: 'blobs_synced',      n: s.blobs_synced},      s.blobs_synced || 0);
-        setNum($('sAttacks'), {key: 'attacks_blocked',   n: s.attacks_blocked},   s.attacks_blocked || 0);
-        setNum($('sUsers'),   {key: 'active_users',      n: s.active_users},      s.active_users || 0);
-
-        renderTrust(d.limits, bumped);
-
-        if (d.mode) {
-          $('mSig').textContent  = d.mode.signature_enforcement;
-          $('mExp').textContent  = d.mode.explainer;
-          $('mDemo').textContent = d.mode.demo_mode ? 'on' : 'off';
-          $('mVoice').textContent = d.mode.voice || '—';
-        }
-      })
-      .catch(function (err) {
-        fails += 1;
-        if (fails >= 2) connOK(false);
-        if (String(err.message) === 'bad token') {
-          $('connText').textContent = 'invalid dashboard token';
-        }
+  el.threatsEmpty.hidden = true;
+  renderRulebar();
+  if (!quiet) {
+    retrigger(t.el, 'enter');
+    if (!S.paused) {
+      const R = RULES[rule];
+      toast({
+        tone: t.advisory ? 'amber' : 'red', iconName: R.icon,
+        title: t.advisory ? `Anomaly flagged · ${e.sender}` : `${R.title}`,
+        body: `${e.sender} · ${inr(e.amount)} — ${t.advisory ? 'let through, flagged for review' : 'stopped before any money moved'}`,
       });
+      if (!t.advisory) { alarm(); beep(); }
+    }
   }
+}
 
-  tick();
-  setInterval(tick, 2000);
+// A burst in one sync request emits its threat card after the first block and
+// bumps blocked_count in place; count the blocks that follow so a poll that
+// lands mid-request still ends on the right number.
+function growThreat(e, rule, quiet) {
+  if (e.threat_id != null) {
+    // Current backend: the row names its card, and the card came first.
+    const card = S.threats.get(`t:${e.threat_id}`);
+    if (!card) return;
+    card.rows = (card.rows || 0) + 1;
+    if (card.rows > card.count) {
+      card.count = card.rows;
+      paintThreat(card);
+      if (!quiet) retrigger(card.el.querySelector('.mult'), 'bump');
+    }
+    return;
+  }
+  // Older backend: rows carry no card id, so infer it from timing.
+  if (!rule) return;
+  const t = S.cardFor.get(`${e.sender}|${rule}`);
+  if (!t || e.id < t.ev.id || e.ts - t.lastTs > BURST_WINDOW_S) return;
+  t.seen += 1;
+  t.lastTs = e.ts;
+  t.lastGrowId = e.id;
+  if (t.seen > t.count) {
+    t.count = t.seen;
+    paintThreat(t);
+    if (!quiet) retrigger(t.el.querySelector('.mult'), 'bump');
+  }
+}
+
+function paintThreat(t) {
+  const e = t.ev, R = RULES[t.rule];
+  setHTML(t.el, html`<div class="threat-ico">${icon(R.icon)}</div>
+    <div class="threat-body">
+      <div class="threat-top"><h4>${t.advisory ? 'Anomaly flagged' : R.title}</h4>${t.count > 1 ? html`<span class="mult">×${t.count}</span>` : ''}<time data-ago="${e.ts}">${ago(e.ts)}</time></div>
+      <p>${e.detail || reasonLabel(e.reason)}</p>
+      <div class="threat-meta"><span class="who">${e.sender || 'Unknown'}</span><span>${inr(e.amount)}</span><span>${R.label}</span><span class="src">${icon('spark')}${t.advisory ? 'Heuristics' : explainerName()}</span></div>
+    </div>`);
+}
+
+function renderRulebar() {
+  const entries = Object.keys(RULES).map(r => [r, S.ruleCounts[r] || 0]).filter(x => x[1] > 0);
+  const total = entries.reduce((a, x) => a + x[1], 0);
+  el.threatCount.textContent = fmtInt(total);
+  el.rulebar.hidden = total === 0;
+  if (!total) return;
+  setHTML(el.rulebar, html`<div class="stack" aria-hidden="true">${entries.map(([r, n]) => html`<i class="r-${r}" style="flex-grow:${n}"></i>`)}</div>
+    <div class="legend">${entries.map(([r, n]) => html`<button type="button" class="lg r-${r} ${S.rule === r ? 'on' : ''}" data-rule="${r}" aria-pressed="${S.rule === r}"><b>${n}</b>${RULES[r].short}</button>`)}</div>`);
+}
+
+// ── Trust engine ────────────────────────────────────────
+function userModel(name) {
+  let u = S.users.get(name);
+  if (!u) { u = { user: name, history: [], el: null, limit: null, risk: 0, features: null, sig: '', pct: 0, delta: 0, deltaUntil: 0 }; S.users.set(name, u); }
+  return u;
+}
+function pushHistory(u, ts, limit) {
+  const last = u.history[u.history.length - 1];
+  if (last && last[1] === limit) return;
+  if (last && ts < last[0]) ts = last[0];
+  u.history.push([ts, limit]);
+  if (u.history.length > 60) u.history.shift();
+}
+
+function renderTrust(list, quiet) {
+  const before = new Map();
+  if (!quiet && !reduced()) for (const u of S.users.values()) if (u.el && u.el.isConnected) before.set(u.user, u.el.getBoundingClientRect().top);
+  const order = [];
+  const listed = new Set();
+  for (const row of list) {
+    const u = userModel(row.user);
+    listed.add(u.user);
+    const prev = u.limit;
+    const limit = num(row.limit);
+    if (prev != null && prev !== limit && !quiet) {
+      u.delta = limit - prev;
+      u.deltaUntil = Date.now() + 12000;
+    }
+    u.limit = limit;
+    u.risk = num(row.risk_score);
+    if (row.features) u.features = row.features;
+    pushHistory(u, num(row.updated_at) || nowS(), limit);
+    if (!u.el) {
+      u.el = document.createElement('div');
+      u.el.className = 'user';
+      u.el.dataset.user = u.user;
+      u.el.tabIndex = 0;
+      u.el.setAttribute('role', 'button');
+      if (!quiet) retrigger(u.el, 'enter');
+    }
+    const changed = paintUser(u);
+    if (changed && prev != null && prev !== limit && !quiet) retrigger(u.el, limit < prev ? 'flash-down' : 'flash-up');
+    order.push(u.el);
+  }
+  for (const u of S.users.values()) if (!listed.has(u.user) && u.el) { u.el.remove(); u.el = null; u.sig = ''; }
+  const current = $$('.user', el.trust);
+  if (order.length !== current.length || order.some((node, i) => node !== current[i])) {
+    for (const node of order) el.trust.appendChild(node);
+    for (const [name, top] of before) {
+      const u = S.users.get(name);
+      if (!u || !u.el) continue;
+      const dy = top - u.el.getBoundingClientRect().top;
+      if (Math.abs(dy) < 1) continue;
+      u.el.style.transition = 'none';
+      u.el.style.transform = `translateY(${dy}px)`;
+      void u.el.offsetHeight;
+      u.el.style.transition = 'transform .55s cubic-bezier(.2,.8,.2,1)';
+      u.el.style.transform = '';
+    }
+  }
+  el.trustEmpty.hidden = order.length > 0;
+  if (order.length) {
+    const scored = list.length;
+    const avg = Math.round(list.reduce((a, r) => a + (1 - num(r.risk_score)) * 100, 0) / scored);
+    el.trustSub.textContent = `${scored} scored · avg trust ${avg}/100`;
+  }
+}
+
+function paintUser(u) {
+  const pct = Math.max(0, Math.min(100, u.limit / MAX_LIMIT * 100));
+  const trust = Math.round((1 - u.risk) * 100);
+  const band = u.limit <= 0 ? BANDS[BANDS.length - 1] : bandFor(u.risk);
+  const deltaOn = u.deltaUntil > Date.now();
+  const f = u.features;
+  const sig = [u.limit, u.risk, deltaOn, u.delta, f ? JSON.stringify(f) : ''].join('|');
+  if (sig === u.sig) return false;
+  const from = u.sig ? u.pct : (S.initial ? pct : 0);
+  u.sig = sig;
+  u.pct = pct;
+  setClasses(u.el, ['t-'], [band[4]]);
+  setHTML(u.el, html`<div class="avatar" style="--h:${hue(u.user)}">${initial(u.user)}</div>
+    <div class="user-main">
+      <div class="user-top">
+        <span class="name">${u.user}</span><span class="tier">${band[3]}</span>
+        ${deltaOn ? html`<span class="delta ${u.delta < 0 ? 'down' : 'up'}">${u.delta < 0 ? '▼' : '▲'} ${inr(Math.abs(u.delta))}</span>` : ''}
+        <span class="limit">${inr(u.limit)}</span>
+      </div>
+      <div class="bar" title="Offline limit out of ₹5,000"><i style="width:${from}%"></i><s style="left:10%"></s><s style="left:30%"></s><s style="left:60%"></s></div>
+      <div class="user-foot"><span>Trust <b>${trust}</b>/100</span><span>Risk ${u.risk.toFixed(2)}</span>${f ? html`<span>KYC ${f.kyc_tier} · ${fmtInt(f.transaction_count)} txns</span>` : ''}</div>
+    </div>`);
+  const bar = u.el.querySelector('.bar i');
+  if (from !== pct) requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = `${pct}%`; }));
+  return true;
+}
+
+// ── KPIs ────────────────────────────────────────────────
+function renderStats(st, quiet) {
+  S.stats = st;
+  tween(el.kSettled, num(st.settled_total_inr), inr, quiet);
+  tween(el.kBlobs, num(st.blobs_synced), fmtInt, quiet);
+  tween(el.kAttacks, num(st.attacks_blocked), fmtInt, quiet);
+  tween(el.kUsers, num(st.active_users), fmtInt, quiet);
+}
+function tween(node, to, fmt, quiet) {
+  const from = node.dataset.v == null ? null : Number(node.dataset.v);
+  if (from === to) return;
+  node.dataset.v = to;
+  cancelAnimationFrame(node._raf);
+  if (from == null || quiet || reduced()) { node.textContent = fmt(to); return; }
+  const t0 = performance.now(), dur = 800;
+  const step = now => {
+    const k = Math.min(1, (now - t0) / dur);
+    node.textContent = fmt(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) node._raf = requestAnimationFrame(step);
+  };
+  node._raf = requestAnimationFrame(step);
+  retrigger(node.closest('.kpi'), 'pop');
+}
+
+function refreshDerived() {
+  const now = nowS();
+  const buckets = 20, width = 30;
+  const amount = new Array(buckets).fill(0), count = new Array(buckets).fill(0);
+  let recent = 0, settled = 0, verified = 0;
+  for (const e of S.events.values()) {
+    if (e.kind !== 'settled') continue;
+    settled++;
+    if (e.signature_verified) verified++;
+    const age = now - e.ts;
+    if (age <= 300) recent += num(e.amount);
+    const b = buckets - 1 - Math.floor(age / width);
+    if (b >= 0 && b < buckets) { amount[b] += num(e.amount); count[b] += 1; }
+  }
+  spark(el.sparkSettled, amount);
+  spark(el.sparkBlobs, count);
+  if (S.stats && num(S.stats.settled_total_inr) > 0) {
+    setHTML(el.kSettledSub, recent > 0 ? html`<b>+${inr(recent)}</b> in the last 5 min` : html`Across <b>${fmtInt(S.stats.blobs_synced)}</b> synced payments`);
+  } else el.kSettledSub.textContent = 'Waiting for the first sync';
+  if (settled) setHTML(el.kBlobsSub, html`<b>${Math.round(verified / settled * 100)}%</b> Ed25519-verified`);
+  else el.kBlobsSub.textContent = 'Offline blobs settled on reconnect';
+  const entries = Object.keys(RULES).map(r => [r, S.ruleCounts[r] || 0]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  if (entries.length) setHTML(el.kAttacksSub, html`<span class="rule-dots">${entries.slice(0, 4).map(([r, n]) => html`<span class="r-${r}">${n} ${RULES[r].short.toLowerCase()}</span>`)}</span>`);
+  else el.kAttacksSub.textContent = 'Shield armed';
+  const scored = Array.from(S.users.values()).filter(u => u.el);
+  if (scored.length) {
+    const low = scored.filter(u => u.risk >= 0.6).length;
+    setHTML(el.kUsersSub, html`<b>${scored.length}</b> scored${low ? html` · <b>${low}</b> high risk` : ' · all low risk'}`);
+  } else el.kUsersSub.textContent = 'Scored by the AI risk model';
+}
+function spark(svg, values) {
+  const max = Math.max(1, ...values), w = 120 / values.length;
+  setHTML(svg, html`${values.map((v, i) => {
+    const h = v ? Math.max(3, v / max * 30) : 1.5;
+    return html`<rect class="${v ? 'on' : ''}" x="${(i * w + 0.8).toFixed(2)}" y="${(32 - h).toFixed(2)}" width="${(w - 1.6).toFixed(2)}" height="${h.toFixed(2)}" rx="1"/>`;
+  })}`);
+}
+
+function renderModes(mode) {
+  S.mode = mode;
+  const sig = JSON.stringify(mode);
+  if (sig === S.modeSig) return;
+  S.modeSig = sig;
+  const pills = [
+    mode.signature_enforcement === 'enforce' ? ['ok', 'Signatures', 'enforced'] : ['warn', 'Signatures', humanize(mode.signature_enforcement || 'off').toLowerCase()],
+    mode.explainer === 'llm' ? ['ok', 'Explainer', 'AI'] : ['info', 'Explainer', 'template'],
+    mode.voice === 'gnani' ? ['ok', 'Voice', 'Gnani Prisma'] : ['info', 'Voice', 'mock'],
+    mode.demo_mode ? ['warn', 'Demo mode', 'on'] : ['ok', 'Demo mode', 'off'],
+  ];
+  setHTML(el.modes, html`${pills.map(([tone, k, v]) => html`<span class="mode ${tone}"><i></i>${k} <b>${v}</b></span>`)}`);
+  $$('.threat', el.threats).forEach(node => { const t = S.threats.get(node.dataset.key); if (t) paintThreat(t); });
+}
+
+// ── Toasts, alarm, sound ────────────────────────────────
+function toast({ tone = 'blue', iconName = 'activity', title, body }) {
+  const node = document.createElement('div');
+  node.className = `toast tone-${tone}`;
+  node.setAttribute('role', 'status');
+  setHTML(node, html`<div class="toast-ico">${icon(iconName)}</div><div><b>${title}</b><span>${body}</span></div>`);
+  el.toasts.prepend(node);
+  while (el.toasts.children.length > 3) el.toasts.lastElementChild.remove();
+  setTimeout(() => { node.classList.add('out'); setTimeout(() => node.remove(), reduced() ? 0 : 350); }, 4800);
+}
+let alarmTimer = 0;
+function alarm() {
+  if (reduced()) return;
+  document.body.classList.remove('alarm');
+  void document.body.offsetWidth;
+  document.body.classList.add('alarm');
+  clearTimeout(alarmTimer);
+  alarmTimer = setTimeout(() => document.body.classList.remove('alarm'), 1400);
+}
+let audio = null;
+function beep() {
+  if (!S.prefs.sound) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const t = audio.currentTime;
+    [[880, 0], [620, 0.14]].forEach(([freq, at]) => {
+      const osc = audio.createOscillator(), gain = audio.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t + at);
+      gain.gain.exponentialRampToValueAtTime(0.18, t + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.13);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(t + at);
+      osc.stop(t + at + 0.14);
+    });
+  } catch (_) {}
+}
+
+// ── Drawer ──────────────────────────────────────────────
+const field = (label, value, opt = {}) => html`<div class="f ${opt.wide ? 'wide' : ''}"><dt>${label}</dt><dd class="${opt.mono ? 'mono' : ''}">${value == null || value === '' ? '—' : value}${
+  opt.copy ? html`<button class="copy" type="button" data-copy="${opt.copy}">${icon('copy')}<span>Copy</span></button>` : ''}</dd></div>`;
+
+function describe(e) {
+  const amt = e.amount != null ? inr(e.amount) : '';
+  switch (e.kind) {
+    case 'blob_received': return `${e.sender} → ${e.receiver} · ${amt} received via ${route(e.handoff_method)[0]}`;
+    case 'settled': return `${e.sender} → ${e.receiver} · ${amt} settled${e.signature_verified ? ' · signature verified' : ''}`;
+    case 'settlement_confirmed': return `${amt} confirmed by ${e.receiver}`;
+    case 'rejected': return `${amt} blocked · ${reasonLabel(e.reason)}`;
+    case 'fraud_flag': return `${(own(RULES, e.rule) ? RULES[e.rule] : RULES.heuristics).title}${num(e.blocked_count) > 1 ? ` ×${e.blocked_count}` : ''}`;
+    case 'signature_invalid': return `${amt} signature not verified (${humanize(e.enforcement)})`;
+    case 'limit_changed': return `AI limit ${inr(e.old_limit)} → ${inr(e.new_limit)}`;
+    case 'online_payment': return `${e.sender} → ${e.receiver} · ${amt} online`;
+    case 'voice_transcribed': return e.ok ? `Voice payment heard ${amt} · ${e.provider}` : `Voice fell back on-device (${humanize(e.reason || 'error')})`;
+    case 'device_key_registered': return `Device key ${e.rotated ? 'rotated' : 'registered'}`;
+    case 'device_evicted': return 'Oldest device signed out';
+    default: return humanize(e.kind);
+  }
+}
+function related(name, skip) {
+  if (!name) return '';
+  const skipSet = new Set(skip), out = [];
+  const all = Array.from(S.events.values());
+  for (let i = all.length - 1; i >= 0 && out.length < 8; i--) {
+    const e = all[i];
+    if (skipSet.has(e.id)) continue;
+    if (e.sender === name || e.receiver === name || e.user === name) out.push(e);
+  }
+  if (!out.length) return '';
+  return html`<div class="sec"><div class="sec-k">Recent activity · ${name}</div><ul class="mini">${out.map(e => html`<li><time>${hms(e.ts)}</time><span>${describe(e)}</span></li>`)}</ul></div>`;
+}
+const rawEvents = evs => html`<details class="raw"><summary>Raw events (${evs.length})</summary><pre>${JSON.stringify(evs, null, 2)}</pre></details>`;
+
+function rowDrawer(d) {
+  const evs = d.events.map(id => S.events.get(id)).filter(Boolean).sort((a, b) => a.id - b.id);
+  if (d.type !== 'blob') return eventDrawer(d, evs);
+  const blocked = d.state === 'rejected';
+  const [routeName] = route(d.route);
+  const offline = d.offline !== false && d.route !== 'online';
+  const label = { received: 'Received', unsigned: 'Received · unsigned', settled: 'Settled', confirmed: 'Confirmed', rejected: 'Blocked' }[d.state];
+  const steps = [{ cls: d.times.received ? 'done' : 'wait', t: 'Received by SetuPay', s: d.times.received ? `${hms(d.times.received)} via ${routeName}${offline ? ' · paid offline' : ''}` : 'Arrived with the block below' }];
+  if (blocked) {
+    steps.push({ cls: 'fail', t: `Blocked · ${reasonLabel(d.reason)}`, s: `${hms(d.times.rejected)}${d.count > 1 ? ` · ${d.count} payments` : ''} · no money moved` });
+  } else {
+    steps.push(d.sig ? { cls: 'done', t: 'Ed25519 signature verified', s: 'Signed on the sender’s phone with a key that never leaves it' }
+      : d.sigWarn ? { cls: 'warn', t: 'Signature not verified', s: 'Let through because signature enforcement is in log-only mode' }
+      : { cls: d.times.settled ? 'done' : 'wait', t: 'Signature check', s: d.times.settled ? 'Passed' : 'Pending' });
+    steps.push({ cls: d.times.settled ? 'done' : 'wait', t: 'Settled', s: d.times.settled ? hms(d.times.settled) : 'Waiting for the sync to finish' });
+    if (offline) steps.push({ cls: d.times.confirmed ? 'done' : 'wait', t: 'Confirmed by the receiver', s: d.times.confirmed ? hms(d.times.confirmed) : 'When the receiver’s phone syncs' });
+  }
+  const title = `${inrExact(d.count > 1 ? d.total : d.amount)} · ${d.sender || 'Unknown'}${d.receiver ? ` → ${d.receiver}` : ''}`;
+  return {
+    kicker: blocked ? 'Blocked payment' : offline ? 'Offline payment' : 'Payment',
+    title,
+    body: html`
+      ${blocked && d.detail ? html`<div class="sec"><div class="callout" style="--cc:var(--red)"><div class="callout-k">${icon('spark')}Why it was blocked · ${explainerName()}</div><p>${d.detail}</p></div></div>` : ''}
+      <div class="sec"><div class="sec-k">Lifecycle</div><ol class="timeline">${steps.map(x => html`<li class="${x.cls}"><div class="tl-t">${x.t}</div><div class="tl-s">${x.s}</div></li>`)}</ol></div>
+      <div class="sec"><div class="sec-k">Details</div><dl class="fields">
+        ${field('Amount', d.count > 1 ? `${inrExact(d.total)} across ${d.count}` : inrExact(d.amount))}
+        ${field('Status', label)}
+        ${field('From', d.sender)}${field('To', d.receiver)}
+        ${field('Hand-off', routeName)}${field('Mode', offline ? 'Offline' : 'Online')}
+        ${blocked ? field('Reason code', d.reason, { mono: true }) : ''}
+        ${blocked && d.count > 1 ? field('Blocked', `${d.count} payments`) : ''}
+        ${d.blobs.length > 1
+          ? field('Blob IDs', html`<div>${d.blobs.map(b => html`<div>${b}</div>`)}</div>`, { wide: true, mono: true, copy: d.blobs.join('\n') })
+          : field('Blob ID', d.blobs[0], { wide: true, mono: true, copy: d.blobs[0] })}
+      </dl></div>
+      ${related(d.sender, d.events)}
+      ${rawEvents(evs)}`,
+  };
+}
+
+function eventDrawer(d, evs) {
+  const e = d.ev;
+  if (d.type === 'voice') {
+    const gnani = e.provider === 'gnani';
+    return {
+      kicker: 'Voice payment', title: e.ok ? `Heard ${e.amount != null ? inr(e.amount) : 'a payment'}` : 'Voice fell back on-device',
+      body: html`
+        <div class="sec"><div class="callout" style="--cc:${gnani ? 'var(--violet)' : 'var(--orange)'}"><div class="callout-k">${icon('mic')}${gnani ? 'Powered by Gnani Prisma' : 'Mock speech model'}</div>
+          <p>${e.ok ? 'The spoken request was transcribed in the cloud and the amount pulled out before the payment sheet opened. Only the transcript comes back — audio is not stored.' : 'The cloud model was unavailable, so the phone switched to its on-device recogniser and the payment could still go ahead.'}</p></div></div>
+        <div class="sec"><dl class="fields">${field('Result', e.ok ? 'Transcribed' : 'Fallback')}${field('Amount heard', e.amount != null ? inrExact(e.amount) : '—')}
+          ${field('Language', e.lang, { mono: true })}${field('Latency', e.latency_ms != null ? `${fmtInt(e.latency_ms)} ms` : '—')}
+          ${field('Provider', gnani ? 'Gnani Prisma' : humanize(e.provider))}${field('Speaker', e.user)}
+          ${!e.ok ? field('Fallback reason', humanize(e.reason), { wide: true }) : ''}</dl></div>
+        ${related(e.user, [e.id])}${rawEvents(evs)}`,
+    };
+  }
+  if (d.type === 'key') {
+    return {
+      kicker: 'Trust root', title: `${e.user} ${e.rotated ? 'rotated' : 'registered'} a device key`,
+      body: html`<div class="sec"><div class="callout" style="--cc:var(--teal)"><div class="callout-k">${icon('key')}Ed25519</div><p>This phone’s public key is now on file. Every offline payment it makes must carry a signature that verifies against this key, so a payment can only have come from this handset.</p></div></div>
+        <div class="sec"><dl class="fields">${field('Account', e.user)}${field('Change', e.rotated ? 'Key rotated' : 'First registration')}${field('When', `${hms(e.ts)} · ${ago(e.ts)}`, { wide: true })}</dl></div>
+        ${related(e.user, [e.id])}${rawEvents(evs)}`,
+    };
+  }
+  if (d.type === 'evict') {
+    return {
+      kicker: 'Device security', title: `${e.user}'s oldest device signed out`,
+      body: html`<div class="sec"><p class="prose">An account can hold two active devices. Registering a third signs out the oldest, so a lost phone cannot keep paying offline.</p></div>
+        <div class="sec"><dl class="fields">${field('Account', e.user)}${field('Reason', humanize(e.reason))}${field('Device', e.device, { wide: true, mono: true })}${field('When', `${hms(e.ts)} · ${ago(e.ts)}`, { wide: true })}</dl></div>
+        ${related(e.user, [e.id])}${rawEvents(evs)}`,
+    };
+  }
+  if (d.type === 'online') {
+    return {
+      kicker: 'Online payment', title: `${inrExact(e.amount)} · ${e.sender} → ${e.receiver}`,
+      body: html`<div class="sec"><dl class="fields">${field('Amount', inrExact(e.amount))}${field('Mode', 'Online')}${field('From', e.sender)}${field('To', e.receiver)}${field('When', `${hms(e.ts)} · ${ago(e.ts)}`, { wide: true })}</dl></div>
+        ${related(e.sender, [e.id])}${rawEvents(evs)}`,
+    };
+  }
+  return {
+    kicker: 'Event', title: humanize(e.kind),
+    body: html`<div class="sec"><dl class="fields">${field('When', `${hms(e.ts)} · ${ago(e.ts)}`, { wide: true })}</dl></div>${rawEvents(evs)}`,
+  };
+}
+
+function threatDrawer(t) {
+  const e = t.ev, R = RULES[t.rule];
+  const blocks = Array.from(S.rows.values()).filter(d => d.type === 'blob' && d.state === 'rejected' && d.sender === e.sender && reasonRule(d.reason) === t.rule);
+  const burst = blocks.filter(d => d.times.rejected >= e.ts - 1 && d.times.rejected <= t.lastTs + 1).reduce((a, d) => a + d.total, 0);
+  const amount = t.count > 1 ? (burst > num(e.amount) ? `${inrExact(burst)} across ${t.count}` : `${inrExact(e.amount)} first of ${t.count}`) : inrExact(e.amount);
+  return {
+    kicker: t.advisory ? 'Flagged for review' : 'Threat blocked',
+    title: t.advisory ? `Anomaly flagged · ${e.sender}` : R.title,
+    body: html`
+      <div class="sec"><div class="callout r-${t.rule}" style="--cc:var(--rc)"><div class="callout-k">${icon('spark')}${t.advisory ? 'Heuristic signals' : explainerName()}</div><p>${e.detail || reasonLabel(e.reason)}</p></div></div>
+      <div class="sec"><dl class="fields">
+        ${field('Account', e.sender)}${field('Amount', amount)}
+        ${field('Attack', R.label)}${field(t.advisory ? 'Outcome' : 'Blocked', t.advisory ? 'Let through, flagged' : `${t.count} payment${t.count > 1 ? 's' : ''}`)}
+        ${field('Rule', e.rule, { mono: true })}${field('Reason code', e.reason, { mono: true })}
+        ${field('Detected', `${hms(e.ts)} · ${ago(e.ts)}`, { wide: true })}
+      </dl></div>
+      <div class="sec"><div class="sec-k">How SetuPay caught it</div><p class="prose">${R.how}</p></div>
+      ${blocks.length ? html`<div class="sec"><div class="sec-k">Blocked payments</div><ul class="mini">${blocks.slice(-6).reverse().map(d => html`<li><time>${hms(d.times.rejected)}</time><span>${inr(d.count > 1 ? d.total : d.amount)}${d.count > 1 ? ` · ${d.count} payments` : ''} · ${d.blobs[0]}</span></li>`)}</ul></div>` : ''}
+      ${related(e.sender, [e.id])}
+      ${rawEvents([e])}`,
+  };
+}
+
+function userDrawer(u) {
+  const trust = Math.round((1 - u.risk) * 100);
+  const band = u.limit <= 0 ? BANDS[BANDS.length - 1] : bandFor(u.risk);
+  const riskBand = bandFor(u.risk);
+  const f = u.features;
+  return {
+    kicker: 'AI trust engine', title: u.user,
+    body: html`
+      <div class="sec hero ${band[4]}">
+        <div class="ring" style="--p:${trust}"><div><b>${trust}</b><span>trust</span></div></div>
+        <div><div class="hero-k">Offline limit</div><div class="hero-v">${inr(u.limit)}</div>
+          <div class="hero-s"><span class="tier">${band[3]}</span><span>risk ${u.risk.toFixed(3)}</span>${u.limit > 0 && u.limit < riskBand[2] ? html`<span>· capped by balance</span>` : ''}</div></div>
+      </div>
+      <div class="sec ${band[4]}"><div class="sec-k">Limit this session</div>${historyChart(u)}</div>
+      ${f ? html`<div class="sec"><div class="sec-k">Signals the model scored</div><dl class="fields">
+        ${field('KYC tier', f.kyc_tier)}${field('Transactions', fmtInt(f.transaction_count))}
+        ${field('Days on SetuPay', fmtInt(f.days_since_registration))}${field('Device trust', `${Math.round(num(f.device_trust_score) * 100)}%`)}
+        ${field('Fraud flags', fmtInt(f.fraud_flags), { wide: true })}</dl></div>` : ''}
+      <div class="sec ${riskBand[4]}"><div class="sec-k">Risk bands</div>
+        <table class="bands">${BANDS.map(b => html`<tr class="${b === riskBand ? 'on' : ''}"><td>${b[1] === Infinity ? '≥ 0.90' : b[0] === 0 ? '< 0.20' : `${b[0].toFixed(2)} – ${b[1].toFixed(2)}`}</td><td>${b[3]}</td><td>${inr(b[2])}</td></tr>`)}</table>
+        <p class="note">A gradient-boosted risk model scores the account on the server. The phone runs the same model offline and can only lower this limit, never raise it.</p></div>
+      ${related(u.user, [])}`,
+  };
+}
+
+function historyChart(u) {
+  const pts = u.history.slice(-40);
+  if (pts.length < 2) return html`<p class="note">Steady at ${inr(u.limit)} since this dashboard opened.</p>`;
+  const W = 460, H = 120, P = 8;
+  const t0 = pts[0][0], t1 = Math.max(nowS(), pts[pts.length - 1][0] + 1);
+  const x = t => (P + (t - t0) / (t1 - t0) * (W - 2 * P)).toFixed(1);
+  const y = v => (H - P - Math.min(1, Math.max(0, v / MAX_LIMIT)) * (H - 2 * P)).toFixed(1);
+  let path = `M${x(pts[0][0])} ${y(pts[0][1])}`;
+  for (let i = 1; i < pts.length; i++) path += ` H${x(pts[i][0])} V${y(pts[i][1])}`;
+  path += ` H${x(t1)}`;
+  const area = `${path} V${H - P} H${x(t0)} Z`;
+  const trail = pts.slice(-6).map(p => inr(p[1]));
+  return html`<svg class="hist" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${[0.1, 0.3, 0.6, 1].map(k => html`<line x1="${P}" x2="${W - P}" y1="${y(k * MAX_LIMIT)}" y2="${y(k * MAX_LIMIT)}"/>`)}<path class="area" d="${area}"/><path class="line" d="${path}"/></svg>
+    <div class="path-legend">${trail.map((v, i) => html`${i ? ' → ' : ''}<b>${v}</b>`)}</div>`;
+}
+
+function renderDrawer() {
+  const ref = S.drawerRef;
+  if (!ref) return;
+  let view = null;
+  if (ref.kind === 'row') { const d = S.rows.get(ref.key); if (d) view = rowDrawer(d); }
+  else if (ref.kind === 'threat') { const t = S.threats.get(ref.key); if (t) view = threatDrawer(t); }
+  else if (ref.kind === 'user') { const u = S.users.get(ref.key); if (u) view = userDrawer(u); }
+  if (!view) return;
+  const openRaw = !!$('details.raw[open]', el.drawerBody);
+  const scroll = el.drawerBody.scrollTop;
+  el.drawerKicker.textContent = view.kicker;
+  el.drawerTitle.textContent = view.title;
+  setHTML(el.drawerBody, view.body);
+  if (openRaw) { const det = $('details.raw', el.drawerBody); if (det) det.open = true; }
+  el.drawerBody.scrollTop = scroll;
+}
+function openDrawer(ref) {
+  const already = el.drawer.classList.contains('open');
+  S.drawerRef = ref;
+  if (!already) el.drawerBody.scrollTop = 0;
+  renderDrawer();
+  if (!already) {
+    S.lastFocus = document.activeElement;
+    el.scrim.hidden = false;
+    el.drawer.classList.add('open');
+    el.drawer.setAttribute('aria-hidden', 'false');
+    el.drawerClose.focus({ preventScroll: true });
+  }
+}
+function closeDrawer() {
+  if (!el.drawer.classList.contains('open')) return;
+  S.drawerRef = null;
+  el.drawer.classList.remove('open');
+  el.drawer.setAttribute('aria-hidden', 'true');
+  el.scrim.hidden = true;
+  if (S.lastFocus && S.lastFocus.isConnected) S.lastFocus.focus({ preventScroll: true });
+}
+
+// ── Polling ─────────────────────────────────────────────
+function schedule(ms) {
+  clearTimeout(S.timer);
+  if (!S.stopped) S.timer = setTimeout(poll, ms);
+}
+async function poll() {
+  if (S.inflight || S.stopped || !S.token) return;
+  S.inflight = true;
+  const seq = ++S.seq;
+  const ctl = new AbortController();
+  const killer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+  const started = performance.now();
+  let next = POLL_MS;
+  try {
+    const res = await fetch(`/api/ops/feed?since=${S.cursor}&token=${encodeURIComponent(S.token)}`, { cache: 'no-store', signal: ctl.signal });
+    if (seq !== S.seq) return;
+    if (res.status === 403) {
+      store.del(TOKEN_KEY, 'session');
+      S.token = null;
+      showGate('That dashboard token was not accepted.');
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (seq !== S.seq) return;
+    S.rtt = Math.round(performance.now() - started);
+    // The backend restarted or was reset: its cursor started again at 1. A
+    // page that was polling a build without epochs counts too.
+    const restarted = data.epoch && ((S.epoch && data.epoch !== S.epoch) || (!S.epoch && S.lastOk && S.cursor > 0));
+    if (restarted) {
+      S.epoch = data.epoch;
+      resetClient();
+      if (!S.justReset) toast({ tone: 'blue', iconName: 'sync', title: 'Live feed restarted', body: 'The backend restarted or was reset — reloading from the beginning.' });
+      S.justReset = false;
+      next = 50;
+      return;
+    }
+    if (data.epoch) S.epoch = data.epoch;
+    const recovered = S.failures >= 2 && S.lastOk;
+    S.failures = 0;
+    S.lastOk = Date.now();
+    ingest(data);
+    setConn('live');
+    if (recovered) toast({ tone: 'green', iconName: 'wifi', title: 'Reconnected', body: 'The live feed is flowing again.' });
+  } catch (_) {
+    if (seq !== S.seq) return;
+    S.failures += 1;
+    setConn(S.failures >= 4 ? 'down' : 'retry');
+    next = Math.min(POLL_MS * Math.pow(1.6, S.failures), MAX_BACKOFF_MS);
+  } finally {
+    clearTimeout(killer);
+    if (seq === S.seq) {
+      S.inflight = false;
+      if (S.token && !S.stopped) schedule(next);
+    }
+  }
+}
+function setConn(state) {
+  S.conn = state;
+  el.conn.dataset.state = state;
+  const text = {
+    live: `Live · ${S.rtt} ms`,
+    retry: S.lastOk ? 'Reconnecting…' : 'Waking the server…',
+    down: S.lastOk ? `Offline · updated ${ago(S.lastOk / 1000)}` : 'Server unreachable · retrying',
+    locked: 'Token required',
+    connecting: 'Connecting…',
+  }[state];
+  el.connText.textContent = text;
+  el.sbPoll.textContent = state === 'live' ? 'Polling every 2 s' : state === 'locked' ? 'Paused — no token' : `Retrying (attempt ${S.failures})`;
+}
+function resetClient() {
+  S.cursor = 0;
+  S.initial = true;
+  S.queue = [];
+  S.events.clear();
+  S.blobRow.clear();
+  S.resend.clear();
+  S.cardFor.clear();
+  S.lastReject = null;
+  S.ruleCounts = {};
+  for (const d of S.rows.values()) d.el?.remove();
+  S.rows.clear();
+  for (const t of S.threats.values()) t.el.remove();
+  S.threats.clear();
+  for (const u of S.users.values()) u.el?.remove();
+  S.users.clear();
+  S.stats = null;
+  el.threatsEmpty.hidden = false;
+  el.trustEmpty.hidden = false;
+  el.trustSub.textContent = 'Risk model sets each offline limit';
+  renderRulebar();
+  updateCounts();
+  if (S.drawerRef) closeDrawer();
+}
+
+// ── Controls ────────────────────────────────────────────
+function setFilter(f) {
+  if (!FILTERS.includes(f)) return;
+  S.filter = f;
+  el.feed.dataset.filter = f;
+  $$('.chip', el.filters).forEach(c => { const on = c.dataset.filter === f; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
+  el.feed.scrollTop = 0;
+  updateCounts();
+}
+function setRule(r) {
+  S.rule = S.rule === r ? null : r;
+  if (S.rule) el.threats.dataset.rule = S.rule; else delete el.threats.dataset.rule;
+  renderRulebar();
+}
+function togglePause(force) {
+  S.paused = typeof force === 'boolean' ? force : !S.paused;
+  el.btnPause.setAttribute('aria-pressed', String(S.paused));
+  setHTML(el.btnPause, html`${icon(S.paused ? 'play' : 'pause')}<span class="sr">${S.paused ? 'Resume feed' : 'Pause feed'}</span>`);
+  el.btnPause.title = S.paused ? 'Resume the feed (Space)' : 'Pause the feed (Space)';
+  el.pausedBar.hidden = !S.paused;
+  if (S.paused) { el.queuedN.textContent = S.queue.length; return; }
+  const queued = S.queue.splice(0);
+  const quiet = queued.length > 12;
+  for (const e of queued) {
+    try { apply(e, quiet); } catch (err) { console.warn('ops dashboard: skipped event', e && e.id, err); }
+  }
+  updateCounts();
+  refreshDerived();
+  if (S.drawerRef) renderDrawer();
+}
+function savePrefs() { store.set(PREFS_KEY, S.prefs); }
+function applyPrefs() {
+  document.documentElement.style.setProperty('--scale', S.prefs.scale);
+  document.documentElement.classList.toggle('no-motion', !S.prefs.motion);
+  el.optSound.checked = !!S.prefs.sound;
+  el.optMotion.checked = !!S.prefs.motion;
+  el.btnSound.setAttribute('aria-pressed', String(!!S.prefs.sound));
+  setHTML(el.btnSound, html`${icon(S.prefs.sound ? 'sound' : 'mute')}<span class="sr">Alert sound</span>`);
+  setHTML(el.scaleSeg, html`${SCALES.map((s, i) => html`<button type="button" data-scale="${s}" class="${Math.abs(s - S.prefs.scale) < 0.001 ? 'on' : ''}">${Math.round(s * 100)}%</button>`)}`);
+  if (!el.settings.hidden) placeSettings();
+}
+function toggleSound(force) {
+  S.prefs.sound = typeof force === 'boolean' ? force : !S.prefs.sound;
+  savePrefs();
+  applyPrefs();
+  if (S.prefs.sound) beep();
+}
+function bumpScale(dir) {
+  const i = SCALES.findIndex(s => Math.abs(s - S.prefs.scale) < 0.001);
+  const next = SCALES[Math.max(0, Math.min(SCALES.length - 1, (i < 0 ? 1 : i) + dir))];
+  S.prefs.scale = next;
+  savePrefs();
+  applyPrefs();
+}
+function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen?.().catch(() => {});
+  } catch (_) {}
+}
+function syncFullscreenIcon() {
+  setHTML(el.btnFull, html`${icon(document.fullscreenElement ? 'shrink' : 'expand')}<span class="sr">Fullscreen</span>`);
+}
+function openSettings() {
+  el.settings.hidden = false;
+  placeSettings();
+  el.btnSettings.setAttribute('aria-expanded', 'true');
+}
+function placeSettings() {
+  const r = el.btnSettings.getBoundingClientRect();
+  const w = el.settings.offsetWidth;
+  el.settings.style.top = `${r.bottom + 8}px`;
+  el.settings.style.left = `${Math.max(16, Math.min(window.innerWidth - w - 16, r.right - w))}px`;
+}
+function closeSettings() {
+  el.settings.hidden = true;
+  el.btnSettings.setAttribute('aria-expanded', 'false');
+  disarmReset();
+}
+let resetArmed = 0;
+function disarmReset() {
+  clearTimeout(resetArmed);
+  resetArmed = 0;
+  el.btnReset.classList.remove('armed');
+  el.btnReset.textContent = 'Reset live feed';
+}
+async function resetFeed() {
+  if (!resetArmed) {
+    el.btnReset.classList.add('armed');
+    el.btnReset.textContent = 'Click again to clear everything';
+    resetArmed = setTimeout(disarmReset, 4000);
+    return;
+  }
+  disarmReset();
+  try {
+    const res = await fetch(`/api/ops/reset?token=${encodeURIComponent(S.token || '')}`, { method: 'POST', cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    closeSettings();
+    S.justReset = true;
+    toast({ tone: 'green', iconName: 'check', title: 'Live feed cleared', body: 'Events and counters start from zero.' });
+    schedule(50);
+  } catch (_) {
+    toast({ tone: 'red', iconName: 'x', title: 'Reset failed', body: 'The backend did not accept the reset — try again.' });
+  }
+}
+function showGate(message) {
+  S.stopped = true;
+  S.seq++;
+  S.inflight = false;
+  clearTimeout(S.timer);
+  closeDrawer();
+  closeSettings();
+  el.gate.hidden = false;
+  el.gateErr.textContent = message || '';
+  setConn('locked');
+  setTimeout(() => el.gateInput.focus(), 30);
+}
+function start(token) {
+  S.token = token;
+  S.stopped = false;
+  S.epoch = null;
+  S.failures = 0;
+  S.lastOk = 0;
+  resetClient();
+  el.gateErr.textContent = '';
+  el.gate.hidden = true;
+  setConn('connecting');
+  poll();
+}
+
+// ── Events ──────────────────────────────────────────────
+// A mouse click leaves no focus behind, so a following Space pauses instead
+// of re-pressing the last clicked button. Keyboard activation keeps focus.
+document.addEventListener('click', e => { if (e.detail > 0) { const b = e.target.closest('button'); if (b) b.blur(); } }, true);
+el.filters.addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) setFilter(c.dataset.filter); });
+el.rulebar.addEventListener('click', e => { const b = e.target.closest('.lg'); if (b) setRule(b.dataset.rule); });
+function activate(container, selector, open) {
+  container.addEventListener('click', e => { const n = e.target.closest(selector); if (n) open(n); });
+  container.addEventListener('keydown', e => {
+    // Enter only: Space is the presenter's pause key, and focus returns to
+    // the row after a drawer closes.
+    if (e.key !== 'Enter') return;
+    const n = e.target.closest(selector);
+    if (n && n === e.target) { e.preventDefault(); e.stopPropagation(); open(n); }
+  });
+}
+activate(el.feed, '.row', n => {
+  const d = S.rows.get(n.dataset.key);
+  if (!d) return;
+  if (d.type === 'limit' && S.users.has(d.ev.user)) openDrawer({ kind: 'user', key: d.ev.user });
+  else openDrawer({ kind: 'row', key: d.key });
+});
+activate(el.threats, '.threat', n => openDrawer({ kind: 'threat', key: n.dataset.key }));
+activate(el.trust, '.user', n => openDrawer({ kind: 'user', key: n.dataset.user }));
+el.drawerClose.addEventListener('click', closeDrawer);
+el.scrim.addEventListener('click', closeDrawer);
+el.drawerBody.addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy]');
+  if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copy); b.lastElementChild.textContent = 'Copied'; }
+  catch (_) { b.lastElementChild.textContent = 'Select & copy'; }
+  setTimeout(() => { if (b.isConnected) b.lastElementChild.textContent = 'Copy'; }, 1600);
+});
+el.btnPause.addEventListener('click', () => togglePause());
+el.pausedBar.addEventListener('click', () => togglePause(false));
+el.btnSound.addEventListener('click', () => toggleSound());
+el.btnFull.addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', syncFullscreenIcon);
+window.addEventListener('resize', () => { if (!el.settings.hidden) placeSettings(); });
+el.btnSettings.addEventListener('click', e => { e.stopPropagation(); if (el.settings.hidden) openSettings(); else closeSettings(); });
+el.settings.addEventListener('click', e => {
+  e.stopPropagation();
+  const s = e.target.closest('[data-scale]');
+  if (s) { S.prefs.scale = Number(s.dataset.scale); savePrefs(); applyPrefs(); }
+});
+document.addEventListener('click', () => { if (!el.settings.hidden) closeSettings(); });
+el.optSound.addEventListener('change', () => toggleSound(el.optSound.checked));
+el.optMotion.addEventListener('change', () => { S.prefs.motion = el.optMotion.checked; savePrefs(); applyPrefs(); });
+el.btnReset.addEventListener('click', resetFeed);
+el.btnHelp.addEventListener('click', () => { closeSettings(); el.help.hidden = false; });
+el.help.addEventListener('click', () => { el.help.hidden = true; });
+el.btnSignout.addEventListener('click', () => { store.del(TOKEN_KEY, 'session'); S.token = null; showGate('Token forgotten on this screen.'); });
+el.gateForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const value = el.gateInput.value.trim();
+  if (!value) { el.gateErr.textContent = 'Enter the token first.'; return; }
+  el.gateInput.value = '';
+  store.set(TOKEN_KEY, value, 'session');
+  start(value);
+});
+[['#kpiSettled', () => setFilter('pay')], ['#kpiBlobs', () => setFilter('pay')], ['#kpiAttacks', () => setFilter('blocked')],
+ ['#kpiUsers', () => { el.trust.scrollTop = 0; retrigger(el.trustPanel, 'ping'); setTimeout(() => el.trustPanel.classList.remove('ping'), 1200); }]]
+  .forEach(([sel, fn]) => {
+    const node = $(sel);
+    node.addEventListener('click', fn);
+    node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } });
+  });
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Escape') {
+    if (!el.help.hidden) el.help.hidden = true;
+    else if (!el.settings.hidden) closeSettings();
+    else closeDrawer();
+    return;
+  }
+  if (!el.gate.hidden || e.target.closest('input, textarea, select')) return;
+  const k = e.key;
+  if (k.length === 1 && k >= '1' && k <= '5') { setFilter(FILTERS[Number(k) - 1]); e.preventDefault(); }
+  else if (k === ' ') { if (e.target.closest('button')) return; togglePause(); e.preventDefault(); }
+  else if (k === 'f' || k === 'F') toggleFullscreen();
+  else if (k === 's' || k === 'S') toggleSound();
+  else if (k === '?') el.help.hidden = !el.help.hidden;
+  else if (k === '+' || k === '=') bumpScale(1);
+  else if (k === '-' || k === '_') bumpScale(-1);
+});
+
+// Once a second: clock, relative times, expiring limit deltas.
+let tick = 0;
+setInterval(() => {
+  tick++;
+  el.clock.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  $$('time[data-ago]', el.threats).forEach(t => { t.textContent = ago(Number(t.dataset.ago)); });
+  for (const u of S.users.values()) if (u.el && u.deltaUntil && u.deltaUntil <= Date.now()) { u.deltaUntil = 0; paintUser(u); }
+  if (S.conn === 'down') setConn('down');
+  if (tick % 5 === 0) refreshDerived();
+}, 1000);
+
+// ── Boot ────────────────────────────────────────────────
+applyPrefs();
+togglePause(false);
+syncFullscreenIcon();
+setHTML(el.drawerClose, html`${icon('x')}<span class="sr">Close</span>`);
+setHTML(el.btnSettings, html`${icon('sliders')}<span class="sr">Settings</span>`);
+el.clock.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+
+const params = new URLSearchParams(location.search);
+let token = params.get('token');
+if (token) {
+  store.set(TOKEN_KEY, token, 'session');
+  // Keep the token off the projector's address bar.
+  params.delete('token');
+  const rest = params.toString();
+  try { history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash); } catch (_) {}
+} else {
+  token = store.get(TOKEN_KEY, null, 'session');
+}
+if (token) start(token);
+else showGate('');
 })();
 </script>
 </body>

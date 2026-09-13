@@ -15,8 +15,9 @@ free-tier cold restarts without the page needing reconnect logic.
 import itertools
 import threading
 import time
+import uuid
 from collections import deque
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 _MAX_EVENTS = 300
 
@@ -38,6 +39,22 @@ _limits: Dict[str, Dict[str, Any]] = {}
 
 # Event kinds that count as a blocked attack on the headline counter.
 _ATTACK_KINDS = ("fraud_flag",)
+
+# Identifies this incarnation of the feed. The cursor restarts at 1 whenever
+# the process restarts (a Render free-tier wake) or reset() runs, so a page
+# still holding cursor 43 would otherwise wait silently for event 44. The
+# dashboard compares epochs and re-reads from zero when this changes.
+_epoch = uuid.uuid4().hex[:12]
+
+# The risk-model inputs safe to put on a projector: trust signals only, no
+# money amounts.
+_DISPLAY_FEATURES = (
+    "kyc_tier",
+    "transaction_count",
+    "days_since_registration",
+    "device_trust_score",
+    "fraud_flags",
+)
 
 
 def mask_user(name: str, user_id: str = "") -> str:
@@ -80,13 +97,27 @@ def emit(kind: str, **data) -> Dict[str, Any]:
         return event
 
 
-def note_limit(user: str, limit: float, risk_score: float) -> None:
-    """Record a user's current limit/risk for the Trust Engine panel."""
+def note_limit(
+    user: str,
+    limit: float,
+    risk_score: float,
+    features: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Record a user's current limit/risk for the Trust Engine panel.
+
+    `features` is the dict the model scored; only the non-monetary trust
+    signals in _DISPLAY_FEATURES are kept. Omitting it keeps the last copy.
+    """
     with _lock:
+        previous = _limits.get(user, {})
+        shown = previous.get("features")
+        if features:
+            shown = {k: features[k] for k in _DISPLAY_FEATURES if k in features}
         _limits[user] = {
             "user": user,
             "limit": float(limit),
             "risk_score": float(risk_score),
+            "features": shown,
             "updated_at": time.time(),
         }
 
@@ -94,6 +125,11 @@ def note_limit(user: str, limit: float, risk_score: float) -> None:
 def since(cursor: int) -> List[Dict[str, Any]]:
     with _lock:
         return [e for e in _events if e["id"] > cursor]
+
+
+def epoch() -> str:
+    with _lock:
+        return _epoch
 
 
 def latest_id() -> int:
@@ -118,10 +154,11 @@ def limits() -> List[Dict[str, Any]]:
 
 def reset() -> None:
     """Clear everything. Used by tests and by the pre-demo reset endpoint."""
-    global _counter
+    global _counter, _epoch
     with _lock:
         _events.clear()
         _counter = itertools.count(1)
+        _epoch = uuid.uuid4().hex[:12]
         _stats["settled_total_inr"] = 0.0
         _stats["blobs_synced"] = 0
         _stats["attacks_blocked"] = 0

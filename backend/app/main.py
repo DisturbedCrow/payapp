@@ -92,10 +92,7 @@ def startup_event():
         from .services import ops_events as ops
         db = SessionLocal()
         try:
-            for user in db.query(User).order_by(User.offline_limit.desc()).limit(6).all():
-                limit, risk, _features = _current_limit_for(user)
-                if limit > 0:
-                    ops.note_limit(ops.mask_user(user.full_name, user.id), limit, risk)
+            prime_ops_limits(db)
         finally:
             db.close()
     except Exception as exc:
@@ -166,6 +163,18 @@ def _current_limit_for(user: User):
     risk_score, _factors = compute_risk_score(features)
     limit = min(compute_offline_limit(risk_score), user.balance)
     return limit, risk_score, features
+
+
+def prime_ops_limits(db: Session) -> None:
+    """Seed the ops dashboard's Trust Engine panel from the database, so the
+    projector shows real limit bars before the first payment (at startup and
+    after a feed reset)."""
+    from .services import ops_events as ops
+
+    for user in db.query(User).order_by(User.offline_limit.desc()).limit(6).all():
+        limit, risk, features = _current_limit_for(user)
+        if limit > 0:
+            ops.note_limit(ops.mask_user(user.full_name, user.id), limit, risk, features)
 
 
 @app.get("/")
@@ -309,11 +318,11 @@ def sync_offline_blobs(
         if extra:
             item.update(extra)
         sender_name = _display(sender_id)
-        # One feed row per blob …
-        ops.emit("rejected", blob_id=blob_id, sender=sender_name, amount=amount,
-                 reason=reason, reason_detail=detail)
-        # … but only one threat card per (sender, rule) per batch: a burst of
-        # 8 blobs is one attack on stage, not eight.
+        # Only one threat card per (sender, rule) per batch: a burst of 8
+        # blobs is one attack on stage, not eight. The card is emitted before
+        # its first feed row, and every row names its card, so the dashboard
+        # counts a burst exactly even when a poll lands mid-request.
+        threat = {}
         if fraud_rule:
             card_key = (sender_id, fraud_rule)
             if card_key in fraud_cards:
@@ -324,6 +333,10 @@ def sync_offline_blobs(
                     rule=fraud_rule, reason=reason, detail=detail,
                     blocked_count=1,
                 )
+            threat = {"threat_id": fraud_cards[card_key]["id"]}
+        # One feed row per blob.
+        ops.emit("rejected", blob_id=blob_id, sender=sender_name, amount=amount,
+                 reason=reason, reason_detail=detail, **threat)
         return item
 
     for blob in blobs:
@@ -557,7 +570,8 @@ def sync_offline_blobs(
     current_user.offline_limit = new_limit
     db.commit()
 
-    ops.note_limit(ops.mask_user(current_user.full_name, current_user.id), new_limit, new_risk)
+    ops.note_limit(ops.mask_user(current_user.full_name, current_user.id), new_limit, new_risk,
+                   new_features)
     if abs(new_limit - old_limit) > 0.01:
         ops.emit("limit_changed",
                  user=ops.mask_user(current_user.full_name, current_user.id),
@@ -710,7 +724,8 @@ def get_offline_limit(
     from .services import ops_events as ops
 
     limit, risk_score, features = _current_limit_for(current_user)
-    ops.note_limit(ops.mask_user(current_user.full_name, current_user.id), limit, risk_score)
+    ops.note_limit(ops.mask_user(current_user.full_name, current_user.id), limit, risk_score,
+                   features)
 
     expiry = datetime.utcnow() + timedelta(hours=24)
 
