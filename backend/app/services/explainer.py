@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import (
     ANTHROPIC_API_KEY,
+    GEMINI_MODEL,
     ANTHROPIC_MODEL,
     EXPLAINER_CACHE_TTL_SECONDS,
     EXPLAINER_PROVIDER,
@@ -386,6 +387,54 @@ class AnthropicExplainer(Explainer):
         return self._mock.explain_rejection(blob, reason, lang)
 
 
+class GeminiExplainer(Explainer):
+    """Gemini flash-lite with the same silent-fallback contract."""
+
+    def __init__(self) -> None:
+        self._mock = MockExplainer()
+        from . import gemini
+        self._gemini = gemini
+        self._enabled = gemini.is_configured()
+        if not self._enabled:
+            log.warning("GEMINI_API_KEY not set — explainer stays on templates")
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def explain_limit(self, payload: dict, lang: str = "en") -> dict:
+        if not self._enabled:
+            return self._mock.explain_limit(payload, lang)
+
+        user_payload = dict(payload)
+        user_payload["lang"] = _lang(lang)
+        parsed = self._gemini.generate_json(
+            _SYSTEM_PROMPT,
+            json.dumps(user_payload),
+            max_output_tokens=300,
+            temperature=0.4,
+            timeout=EXPLAINER_TIMEOUT_SECONDS,
+        )
+        if not parsed:
+            return self._mock.explain_limit(payload, lang)
+
+        try:
+            headline = str(parsed["headline"]).strip()
+            body = str(parsed["body"]).strip()
+            tip = str(parsed["tip"]).strip()
+            if not (headline and body and tip):
+                raise ValueError("empty field")
+            return {"headline": headline, "body": body, "tip": tip}
+        except Exception as exc:
+            log.warning("Gemini explainer returned an unusable shape (%s)", exc)
+            return self._mock.explain_limit(payload, lang)
+
+    def explain_rejection(self, blob: dict, reason: str, lang: str = "en") -> str:
+        # Template-only by design: rejections render during the live fraud
+        # demo and must not wait on a network round-trip.
+        return self._mock.explain_rejection(blob, reason, lang)
+
+
 # ── Provider selection + cache ────────────────────────────────────
 
 _provider: Optional[Explainer] = None
@@ -399,7 +448,9 @@ def get_explainer() -> Explainer:
     if _provider is None:
         with _provider_lock:
             if _provider is None:
-                if EXPLAINER_PROVIDER == "anthropic":
+                if EXPLAINER_PROVIDER == "gemini":
+                    _provider = GeminiExplainer()
+                elif EXPLAINER_PROVIDER == "anthropic":
                     _provider = AnthropicExplainer()
                 else:
                     _provider = MockExplainer()
@@ -407,8 +458,13 @@ def get_explainer() -> Explainer:
 
 
 def uses_llm() -> bool:
+    """True only when a live model will actually be called."""
     provider = get_explainer()
-    return isinstance(provider, AnthropicExplainer) and provider._client is not None
+    if isinstance(provider, GeminiExplainer):
+        return provider.enabled
+    if isinstance(provider, AnthropicExplainer):
+        return provider._client is not None
+    return False
 
 
 def explain_limit_cached(user_id: str, payload: dict, lang: str = "en") -> Tuple[dict, bool]:

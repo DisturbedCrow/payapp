@@ -120,6 +120,9 @@ def _get_client():
 def uses_llm() -> bool:
     """True when a real provider is wired up. Used by the route for logging
     and by tests; never gates correctness."""
+    if EXPLAINER_PROVIDER == "gemini":
+        from . import gemini
+        return gemini.is_configured()
     return _get_client() is not None
 
 
@@ -206,13 +209,37 @@ def parse_intent(transcript: Any, lang: Optional[str] = None) -> Dict[str, Any]:
     if not text:
         return unavailable("")
 
+    lang_code = "hi" if (lang or "").lower().startswith("hi") else "en"
+
+    if EXPLAINER_PROVIDER == "gemini":
+        from . import gemini
+        if not gemini.is_configured():
+            return unavailable(text)
+        parsed_raw = gemini.generate_json(
+            SYSTEM_PROMPT,
+            json.dumps({"transcript": text, "lang": lang_code}, ensure_ascii=False),
+            max_output_tokens=MAX_TOKENS,
+            # Deterministic: the same utterance must parse the same way twice
+            # on stage.
+            temperature=0.0,
+        )
+        if parsed_raw is None:
+            return unavailable(text)
+        return {
+            "amount": _coerce_amount(parsed_raw.get("amount")),
+            "recipient_query": _coerce_recipient(parsed_raw.get("recipient_query")),
+            "confidence": _coerce_confidence(parsed_raw.get("confidence")),
+            "transcript": text,
+            "parsed_by": "llm",
+        }
+
     client = _get_client()
     if client is None:
         return unavailable(text)
 
     try:
         user_content = json.dumps(
-            {"transcript": text, "lang": "hi" if (lang or "").lower().startswith("hi") else "en"},
+            {"transcript": text, "lang": lang_code},
             ensure_ascii=False,
         )
         response = client.messages.create(

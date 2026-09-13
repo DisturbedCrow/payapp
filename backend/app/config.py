@@ -84,12 +84,31 @@ DEMO_MODE = _env_bool("DEMO_MODE", True)
 # enforce   → signature failures reject the blob.
 SIGNATURE_ENFORCEMENT = os.getenv("SIGNATURE_ENFORCEMENT", "log_only").strip().lower()
 
-# GenAI risk explainer. "mock" is always available and is the fallback for
-# every failure path of the anthropic provider.
-EXPLAINER_PROVIDER = os.getenv("EXPLAINER_PROVIDER", "mock").strip().lower()
+# GenAI risk explainer + voice intent garnish.
+# "mock" is always available and is the fallback for every failure path of
+# every live provider — the demo never depends on a network call succeeding.
+#   gemini    Google Generative Language API (default; cheapest flash-lite)
+#   anthropic Claude Messages API
+#   mock      deterministic templates only
+EXPLAINER_PROVIDER = os.getenv("EXPLAINER_PROVIDER", "gemini").strip().lower()
+
+# Gemini. flash-lite is the cheapest tier and is comfortably sufficient here:
+# both jobs are short, structured extractions. `-latest` tracks the current
+# cheapest flash-lite rather than pinning a version that gets retired.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
-EXPLAINER_TIMEOUT_SECONDS = float(os.getenv("EXPLAINER_TIMEOUT_SECONDS", "2.0"))
+
+# Shared ceiling for any live LLM call. Measured: gemini-flash-lite-latest
+# averages ~1.2s for these prompts, so 2.0s leaves little headroom on a bad
+# network — but the fallback is instant and invisible, so a miss costs nothing
+# beyond losing the "AI" badge on that render.
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "3.0"))
+EXPLAINER_TIMEOUT_SECONDS = float(
+    os.getenv("EXPLAINER_TIMEOUT_SECONDS", str(LLM_TIMEOUT_SECONDS))
+)
 EXPLAINER_CACHE_TTL_SECONDS = int(os.getenv("EXPLAINER_CACHE_TTL_SECONDS", "300"))
 
 # Live ops dashboard (projector page) — gated by a token query param.

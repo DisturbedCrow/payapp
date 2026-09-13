@@ -17,6 +17,31 @@ services:
           name: offlinepay-db
           property: connectionString
 
+      # ── Demo-day flags ────────────────────────────────────────
+      - key: DEMO_MODE
+        value: "true"
+      # log_only until both demo phones are confirmed signing, then enforce.
+      - key: SIGNATURE_ENFORCEMENT
+        value: log_only
+      # Gates the projector dashboard at /dashboard/live?token=...
+      # sync:false => set the real value in the Render dashboard, not here.
+      - key: OPS_DASH_TOKEN
+        sync: false
+
+      # ── GenAI (risk explainer + voice intent garnish) ─────────
+      # Falls back to deterministic templates whenever the key is absent or
+      # the call fails, so the service is fully functional without this.
+      - key: EXPLAINER_PROVIDER
+        value: gemini
+      # flash-lite is the cheapest tier and sufficient: both jobs are short
+      # structured extractions. `-latest` tracks the current cheapest.
+      - key: GEMINI_MODEL
+        value: gemini-flash-lite-latest
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: LLM_TIMEOUT_SECONDS
+        value: "3.0"
+
 databases:
   - name: offlinepay-db
     plan: free

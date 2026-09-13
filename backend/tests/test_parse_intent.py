@@ -45,6 +45,14 @@ def client():
         app.dependency_overrides.pop(get_db, None)
 
 
+
+@pytest.fixture(autouse=True)
+def _pin_anthropic_branch(monkeypatch):
+    """These tests stub the Anthropic client, so pin parse_intent to that
+    branch. The default provider is now Gemini, which would bypass the stub
+    entirely and make every assertion here vacuous."""
+    monkeypatch.setattr(intent_llm, "EXPLAINER_PROVIDER", "anthropic")
+
 @pytest.fixture(autouse=True)
 def no_provider(monkeypatch):
     """Default every test to 'no LLM configured'.
@@ -249,3 +257,75 @@ class TestParseIntent:
     def test_every_exception_degrades(self, monkeypatch, boom):
         monkeypatch.setattr(intent_llm, "_get_client", lambda: _stub_client(error=boom))
         assert intent_llm.parse_intent("pay x 5")["parsed_by"] == "unavailable"
+
+
+class TestGeminiBranch:
+    """The default provider. parse_intent must route through gemini.generate_json
+    and apply the same defensive coercion as the Anthropic branch."""
+
+    @pytest.fixture(autouse=True)
+    def _use_gemini(self, monkeypatch):
+        monkeypatch.setattr(intent_llm, "EXPLAINER_PROVIDER", "gemini")
+
+    def _stub_gemini(self, monkeypatch, result, configured=True):
+        from app.services import gemini as gemini_mod
+        monkeypatch.setattr(gemini_mod, "is_configured", lambda: configured)
+        monkeypatch.setattr(gemini_mod, "generate_json", lambda *a, **k: result)
+
+    def test_good_reply_is_returned_as_llm(self, monkeypatch):
+        self._stub_gemini(monkeypatch, {
+            "amount": 250, "recipient_query": "jyati", "confidence": 0.9,
+        })
+        out = intent_llm.parse_intent("jyati ko dhai sau bhejo")
+        assert out["amount"] == 250.0
+        assert out["recipient_query"] == "jyati"
+        assert out["confidence"] == 0.9
+        assert out["parsed_by"] == "llm"
+
+    def test_no_key_degrades_to_unavailable(self, monkeypatch):
+        self._stub_gemini(monkeypatch, None, configured=False)
+        assert intent_llm.parse_intent("anything")["parsed_by"] == "unavailable"
+
+    def test_call_failure_degrades_to_unavailable(self, monkeypatch):
+        self._stub_gemini(monkeypatch, None)
+        assert intent_llm.parse_intent("anything")["parsed_by"] == "unavailable"
+
+    def test_absurd_amount_is_coerced_to_null(self, monkeypatch):
+        self._stub_gemini(monkeypatch, {
+            "amount": 10_000_000, "recipient_query": "x", "confidence": 1,
+        })
+        assert intent_llm.parse_intent("x")["amount"] is None
+
+    def test_negative_amount_is_coerced_to_null(self, monkeypatch):
+        self._stub_gemini(monkeypatch, {
+            "amount": -5, "recipient_query": "x", "confidence": 1,
+        })
+        assert intent_llm.parse_intent("x")["amount"] is None
+
+    def test_confidence_is_clamped(self, monkeypatch):
+        self._stub_gemini(monkeypatch, {
+            "amount": 10, "recipient_query": "x", "confidence": 7.5,
+        })
+        assert intent_llm.parse_intent("x")["confidence"] == 1.0
+
+    def test_devanagari_survives_the_round_trip(self, monkeypatch):
+        self._stub_gemini(monkeypatch, {
+            "amount": 250, "recipient_query": "ज्योति", "confidence": 1,
+        })
+        out = intent_llm.parse_intent("ज्योति को ढाई सौ रुपये भेजो")
+        assert out["recipient_query"] == "ज्योति"
+        assert out["transcript"] == "ज्योति को ढाई सौ रुपये भेजो"
+
+    def test_transcript_is_capped_before_the_call(self, monkeypatch):
+        seen = {}
+        from app.services import gemini as gemini_mod
+        monkeypatch.setattr(gemini_mod, "is_configured", lambda: True)
+
+        def capture(system, payload, **kwargs):
+            seen["payload"] = payload
+            return {"amount": 1, "recipient_query": "a", "confidence": 1}
+
+        monkeypatch.setattr(gemini_mod, "generate_json", capture)
+        out = intent_llm.parse_intent("y" * 900)
+        assert len(out["transcript"]) == intent_llm.MAX_TRANSCRIPT_CHARS
+        assert "y" * 900 not in seen["payload"]
