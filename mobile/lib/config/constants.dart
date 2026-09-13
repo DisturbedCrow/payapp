@@ -28,9 +28,8 @@ class AppConstants {
   /// mobile data, which is what most phones will be on. Override at build
   /// time with --dart-define=PUBLIC_API_URL=...
   ///
-  /// PROD-TODO: point this at the permanent deployment. The current value is
-  /// a Cloudflare quick tunnel to the demo laptop, which changes every time
-  /// the tunnel restarts.
+  /// Defaults to the Render deployment (free tier: sleeps after 15 idle
+  /// minutes and wakes with a re-seeded database).
   static const String publicApiUrl = String.fromEnvironment(
     'PUBLIC_API_URL',
     defaultValue: 'https://setupay-api.onrender.com',
