@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../ml/edge_limit_engine.dart';
 import '../models/payment_blob.dart';
 import 'api_service.dart';
 import 'connectivity_service.dart';
@@ -109,6 +110,11 @@ class SyncEngine {
         'blobs': pending.map((b) => b.toJson()).toList(),
       });
 
+      // Feature I: the server accepted the batch, so the offline clock
+      // restarts; a newer backend also returns fresh risk-model inputs.
+      await _limitService.markSynced();
+      await _limitService.cacheRiskFeatures(response['features']);
+
       int synced = 0;
       int rejected = 0;
       double limitToRestore = 0.0;
@@ -159,6 +165,14 @@ class SyncEngine {
         final restored = (current + limitToRestore).clamp(0.0, total);
         // Only restore the remaining balance — do NOT reset total or expiry
         await _limitService.updateRemainingOnly(restored);
+      }
+
+      // Feature I2: blobs settled or were rejected, so re-score on-device
+      // from what is still pending (exposure drops back toward the trust
+      // baseline). It never raises the limit — the server fetch below does.
+      if (synced > 0 || rejected > 0) {
+        await EdgeLimitEngine()
+            .repriceOffline(reason: rejected > 0 ? 'sync_rejected' : 'sync');
       }
 
       // Fetch fresh limit from backend after sync

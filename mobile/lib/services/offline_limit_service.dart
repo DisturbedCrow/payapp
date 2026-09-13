@@ -1,4 +1,9 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../ml/edge_risk_model.dart';
 import 'api_service.dart';
 
 /// Manages the user's AI/ML-assigned offline credit limit.
@@ -9,6 +14,11 @@ import 'api_service.dart';
 ///
 /// After each offline payment the remaining limit is decremented locally.
 /// When the user syncs, the backend recalculates and pushes a new limit.
+///
+/// Feature I: alongside the limit it caches the seven risk-model inputs the
+/// server scored (`risk_features_cache`) and when the device last heard from
+/// the server (`last_sync_at`), so the on-device model can reprice the limit
+/// while offline.
 class OfflineLimitService {
   static final OfflineLimitService _instance = OfflineLimitService._internal();
   factory OfflineLimitService() => _instance;
@@ -18,10 +28,16 @@ class OfflineLimitService {
   static const String _keyLimit = 'offline_limit';
   static const String _keyRemaining = 'offline_limit_remaining';
   static const String _keyExpiry = 'offline_limit_expiry';
+  static const String keyRiskFeatures = 'risk_features_cache';
+  static const String keyLastSyncAt = 'last_sync_at';
 
   static const Duration _limitTtl = Duration(hours: 24);
 
   final ApiService _api = ApiService();
+
+  /// When the server last issued a limit or accepted a sync. Drives the
+  /// dashboard's "from server · Ns ago" label.
+  final ValueNotifier<DateTime?> lastSyncAt = ValueNotifier<DateTime?>(null);
 
   // ── Public API ────────────────────────────────────────────────
 
@@ -70,6 +86,9 @@ class OfflineLimitService {
           : DateTime.now().add(_limitTtl);
 
       await _saveLimit(limit, expiry);
+      // An older backend sends no `features`: drop any stale copy so the edge
+      // engine falls back to the flat penalty instead of scoring old inputs.
+      await cacheRiskFeatures(response['features'], clearIfMissing: true);
       return limit;
     } catch (_) {
       return null;
@@ -78,9 +97,14 @@ class OfflineLimitService {
 
   /// Saves a new limit (called after a successful sync when the backend
   /// pushes a recalculated limit). Updates total, remaining, and expiry.
-  Future<void> updateLimitFromSync(double newLimit) async {
+  /// [features] is the server's risk-model input map, when it sent one.
+  Future<void> updateLimitFromSync(
+    double newLimit, {
+    Map<String, dynamic>? features,
+  }) async {
     final expiry = DateTime.now().add(_limitTtl);
     await _saveLimit(newLimit, expiry);
+    if (features != null) await cacheRiskFeatures(features);
   }
 
   /// Updates only the remaining limit without touching the total or expiry.
@@ -95,8 +119,8 @@ class OfflineLimitService {
   /// offline payments are already pending (unsynced). Each pending payment
   /// reduces the effective limit by 10%, floored at 30% of total.
   ///
-  /// Called immediately after each offline payment so users can't exploit
-  /// the offline limit by making many payments before syncing.
+  /// Feature I: superseded by `EdgeLimitEngine.repriceOffline`, which calls
+  /// this as its fallback when no server features are cached.
   Future<void> applyLocalRiskPenalty(int pendingBlobCount) async {
     if (pendingBlobCount <= 0) return;
     final prefs = await SharedPreferences.getInstance();
@@ -120,6 +144,59 @@ class OfflineLimitService {
     await prefs.setDouble(_keyRemaining, total);
   }
 
+  // ── Feature I: edge-model context ─────────────────────────────
+
+  /// Caches the server's risk-model inputs. Anything that is not a complete
+  /// seven-feature map is ignored — or, with [clearIfMissing], removes the
+  /// cached copy. Returns whether a feature set was stored.
+  Future<bool> cacheRiskFeatures(Object? raw,
+      {bool clearIfMissing = false}) async {
+    final features = RiskFeatures.tryParse(raw);
+    final prefs = await SharedPreferences.getInstance();
+    if (features == null) {
+      if (clearIfMissing) await prefs.remove(keyRiskFeatures);
+      return false;
+    }
+    await prefs.setString(keyRiskFeatures, jsonEncode(features.toJson()));
+    return true;
+  }
+
+  /// The last risk-model inputs the server sent, or null (never fetched,
+  /// older backend, corrupt entry).
+  Future<RiskFeatures?> getCachedRiskFeatures() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(keyRiskFeatures);
+      if (raw == null || raw.isEmpty) return null;
+      return RiskFeatures.tryParse(jsonDecode(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Records a successful round-trip with the server (limit issued or sync
+  /// accepted).
+  Future<void> markSynced([DateTime? at]) async {
+    final when = at ?? DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(keyLastSyncAt, when.toUtc().toIso8601String());
+    lastSyncAt.value = when;
+  }
+
+  /// When the server last issued a limit or accepted a sync, or null.
+  Future<DateTime?> getLastSyncAt() async {
+    DateTime? parsed;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(keyLastSyncAt);
+      parsed = raw == null ? null : DateTime.tryParse(raw);
+    } catch (_) {
+      parsed = null;
+    }
+    if (parsed != lastSyncAt.value) lastSyncAt.value = parsed;
+    return parsed;
+  }
+
   // ── Private helpers ───────────────────────────────────────────
 
   bool _isExpired(SharedPreferences prefs) {
@@ -138,5 +215,6 @@ class OfflineLimitService {
     await prefs.setDouble(_keyLimit, limit);
     await prefs.setDouble(_keyRemaining, limit);
     await prefs.setString(_keyExpiry, expiry.toIso8601String());
+    await markSynced();
   }
 }

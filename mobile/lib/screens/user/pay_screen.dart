@@ -12,6 +12,7 @@ import '../../models/transaction.dart';
 import '../../models/payment_blob.dart';
 import '../../services/qr_transfer.dart';
 import '../../services/offline_limit_service.dart';
+import '../../ml/edge_limit_engine.dart';
 import '../../services/offline_queue_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/api_service.dart';
@@ -484,10 +485,10 @@ class _PayScreenState extends State<PayScreen> {
     await _queueService.enqueue(blob);
     await _limitService.deductFromLimit(amount);
 
-    // Only blobs this device SENT represent offline exposure. Received
-    // blobs (Case 3b) live in the same table but cost this device nothing.
-    final pendingSent = await _queueService.getPendingSentBlobs();
-    await _limitService.applyLocalRiskPenalty(pendingSent.length);
+    // Feature I2: the on-device risk model reprices the remaining limit from
+    // the cached server features plus this phone's offline exposure (only
+    // SENT blobs count). Falls back to the flat penalty without features.
+    await EdgeLimitEngine().repriceOffline(reason: 'payment');
 
     // Refresh WalletProvider so displayed limit updates immediately
     if (mounted) await context.read<WalletProvider>().loadCachedTokens();
