@@ -33,7 +33,25 @@ from app.services import gnani                        # noqa: E402
 from app.services import ops_events as ops            # noqa: E402
 
 SECRET = "gnani-test-key-DO-NOT-LEAK-7f3a91"
-RESPONSE_KEYS = ["transcript", "provider", "lang", "latency_ms", "entities"]
+CONTRACT_KEYS = ["transcript", "provider", "lang", "latency_ms", "entities"]
+RESPONSE_KEYS = CONTRACT_KEYS + ["model"]  # "model" is the one allowed extra
+
+# Verbatim bodies captured from the live API (format=transcribe,
+# itn_native_numerals=false) on 2026-09-13.
+REAL_GNANI_200 = {
+    "success": True,
+    "request_id": "01a0995e-963b-748e-b13c-88aaa2dfa458",
+    "transcript": "जयती को ₹250 भेजो",
+    "model": "gnani-prisma-v2.5",
+    "processing_time": 0.2009,
+    "end_to_end_latency": 0.2205,
+    "output": {"literal": "जयती को दो सौ पचास रुपए भेजो"},
+}
+# The live 429 does NOT match the documented {"error": {...}} shape.
+REAL_GNANI_429 = {
+    "detail": {"error_code": "RATE_LIMITED", "message": "Rate limit exceeded",
+               "status_code": 429},
+}
 
 
 def _wav(seconds: float = 0.1, rate: int = 16000) -> bytes:
@@ -86,24 +104,43 @@ class _FakeResponse:
 
 
 class _Recorder:
-    """Stands in for httpx.post; records kwargs and returns / raises."""
+    """Stands in for httpx.post; records kwargs and returns / raises.
 
-    def __init__(self, response=None, error=None):
+    With `sequence`, each call takes the next item (the last one repeats);
+    an exception instance in the sequence is raised."""
+
+    def __init__(self, response=None, error=None, sequence=None):
         self.response = response
         self.error = error
+        self.sequence = list(sequence) if sequence is not None else None
         self.calls = []
 
     def __call__(self, url, **kwargs):
         self.calls.append((url, kwargs))
+        if self.sequence is not None:
+            item = self.sequence.pop(0) if len(self.sequence) > 1 else self.sequence[0]
+            if isinstance(item, BaseException):
+                raise item
+            return item
         if self.error is not None:
             raise self.error
         return self.response
 
 
+class _SleepRecorder:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, seconds):
+        self.calls.append(seconds)
+
+
 @pytest.fixture(autouse=True)
 def hermetic(monkeypatch):
-    """No key, a fresh mock rotation, a clean ops feed, and no network."""
+    """No key, a fresh mock rotation, a clean ops feed, no network, no sleeping."""
     monkeypatch.setattr(gnani, "GNANI_API_KEY", "")
+    monkeypatch.setattr(gnani, "GNANI_TIMEOUT_SECONDS", 6.0)
+    monkeypatch.setattr(gnani, "_sleep", _SleepRecorder())
     monkeypatch.setattr(voice_routes, "_mock_counter", itertools.count())
     network = _Recorder(error=AssertionError("unexpected network call"))
     monkeypatch.setattr(gnani.httpx, "post", network)
@@ -135,9 +172,9 @@ def _post(client, audio=None, lang=None, filename="clip.wav"):
     return client.post("/api/ai/transcribe", files=files, data=data)
 
 
-def _configure(monkeypatch, response=None, error=None):
+def _configure(monkeypatch, response=None, error=None, sequence=None):
     monkeypatch.setattr(gnani, "GNANI_API_KEY", SECRET)
-    recorder = _Recorder(response=response, error=error)
+    recorder = _Recorder(response=response, error=error, sequence=sequence)
     monkeypatch.setattr(gnani.httpx, "post", recorder)
     return recorder
 
@@ -207,7 +244,9 @@ class TestMock:
             assert body["lang"] == "hi-IN"
             assert isinstance(body["latency_ms"], int) and body["latency_ms"] >= 0
             assert body["entities"] == {"amount": amount}
+            assert body["model"] == "mock"
         assert hermetic.calls == []
+        assert gnani._sleep.calls == []
 
     def test_lang_is_echoed(self, client):
         assert _post(client, lang="en-IN").json()["lang"] == "en-IN"
@@ -246,6 +285,7 @@ class TestGnani:
         assert body["provider"] == "gnani"
         assert body["lang"] == "ta-IN"
         assert body["entities"] == {"amount": 150000.0}
+        assert body["model"] == "gnani-prisma-v2.5"   # default when the body omits it
 
         assert len(recorder.calls) == 1
         url, kwargs = recorder.calls[0]
@@ -277,6 +317,21 @@ class TestGnani:
         assert SECRET not in json.dumps(ops.since(0))
         assert SECRET not in caplog.text
 
+    def test_real_gnani_hindi_body(self, client, monkeypatch):
+        _configure(monkeypatch, response=_FakeResponse(200, REAL_GNANI_200))
+        r = _post(client, lang="hi-IN")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert list(body.keys()) == RESPONSE_KEYS
+        assert body["transcript"] == "जयती को ₹250 भेजो"
+        assert body["provider"] == "gnani"
+        assert body["lang"] == "hi-IN"
+        assert body["entities"] == {"amount": 250.0}
+        assert body["model"] == "gnani-prisma-v2.5"
+        # output.literal (the pre-ITN words) is never passed on.
+        dumped = json.dumps(body, ensure_ascii=False)
+        assert "output" not in body and "literal" not in dumped and "पचास" not in dumped
+
     def test_default_lang_comes_from_config(self, client, monkeypatch):
         recorder = _configure(monkeypatch, response=_FakeResponse(200, {
             "success": True, "transcript": "jyati ko ₹250 bhejo"}))
@@ -288,7 +343,7 @@ class TestGnani:
         (None, httpx.ConnectError("boom https://api.vachana.ai/stt/v3"), "transport_error"),
         (_FakeResponse(403, {"success": False, "error": {
             "type": "forbidden", "message": "invalid key"}}), None, "http_403"),
-        (_FakeResponse(429, {"success": False, "error": {"type": "rate_limited"}}), None, "http_429"),
+        (_FakeResponse(429, REAL_GNANI_429), None, "rate_limited"),
         (_FakeResponse(500, raise_on_json=True), None, "http_500"),
         (_FakeResponse(200, {"success": False, "error": {
             "type": "bad_audio", "message": "unreadable"}}), None, "provider_error"),
@@ -313,6 +368,53 @@ class TestGnani:
         assert SECRET not in json.dumps(ops.since(0))
         assert SECRET not in caplog.text
 
+    # ── HTTP 429: one retry after 1.2 s, only inside the time budget ──
+
+    def test_429_retries_once_then_succeeds(self, client, monkeypatch):
+        recorder = _configure(monkeypatch, sequence=[
+            _FakeResponse(429, REAL_GNANI_429), _FakeResponse(200, REAL_GNANI_200)])
+        r = _post(client)
+        assert r.status_code == 200, r.text
+        assert r.json()["entities"] == {"amount": 250.0}
+        assert len(recorder.calls) == 2
+        assert gnani._sleep.calls == [1.2] == [gnani._RATE_LIMIT_RETRY_DELAY]
+        first, second = (kw["timeout"] for _url, kw in recorder.calls)
+        assert first == 6.0
+        assert 0 < second <= 6.0 - 1.2          # retry stays inside the budget
+        events = _voice_events()
+        assert len(events) == 1 and events[0]["ok"] is True
+
+    def test_429_twice_is_rate_limited(self, client, monkeypatch):
+        recorder = _configure(monkeypatch, sequence=[
+            _FakeResponse(429, REAL_GNANI_429), _FakeResponse(429, REAL_GNANI_429),
+            _FakeResponse(200, REAL_GNANI_200)])
+        r = _post(client)
+        assert r.status_code == 503
+        assert r.json() == {"fallback": True, "provider": "gnani", "reason": "rate_limited"}
+        assert len(recorder.calls) == 2            # exactly one retry, never two
+        assert gnani._sleep.calls == [1.2]
+        events = _voice_events()
+        assert len(events) == 1
+        assert events[0]["ok"] is False and events[0]["reason"] == "rate_limited"
+
+    def test_429_without_budget_to_retry(self, client, monkeypatch):
+        monkeypatch.setattr(gnani, "GNANI_TIMEOUT_SECONDS", 2.0)
+        recorder = _configure(monkeypatch, sequence=[
+            _FakeResponse(429, REAL_GNANI_429), _FakeResponse(200, REAL_GNANI_200)])
+        r = _post(client)
+        assert r.status_code == 503
+        assert r.json()["reason"] == "rate_limited"
+        assert len(recorder.calls) == 1
+        assert gnani._sleep.calls == []
+
+    def test_429_then_timeout_on_retry(self, client, monkeypatch):
+        recorder = _configure(monkeypatch, sequence=[
+            _FakeResponse(429, REAL_GNANI_429), httpx.ReadTimeout("timed out")])
+        r = _post(client)
+        assert r.status_code == 503
+        assert r.json()["reason"] == "timeout"
+        assert len(recorder.calls) == 2
+
     def test_route_503_when_service_returns_none(self, client, monkeypatch):
         monkeypatch.setattr(gnani, "GNANI_API_KEY", SECRET)
         monkeypatch.setattr(gnani, "transcribe", lambda *a, **k: None)
@@ -332,7 +434,15 @@ class TestService:
         _configure(monkeypatch, response=_FakeResponse(200, {
             "success": True, "request_id": "r1", "transcript": " send ₹1,500 to ramesh "}))
         assert gnani.transcribe(_wav(), "a.wav", "en-IN") == {
-            "transcript": "send ₹1,500 to ramesh", "request_id": "r1"}
+            "transcript": "send ₹1,500 to ramesh", "request_id": "r1", "model": None}
+
+    def test_transcribe_passes_on_model_but_not_literal(self, monkeypatch):
+        _configure(monkeypatch, response=_FakeResponse(200, REAL_GNANI_200))
+        assert gnani.transcribe(_wav(), "a.wav", "hi-IN") == {
+            "transcript": "जयती को ₹250 भेजो",
+            "request_id": "01a0995e-963b-748e-b13c-88aaa2dfa458",
+            "model": "gnani-prisma-v2.5",
+        }
 
     def test_is_configured(self, monkeypatch):
         assert gnani.is_configured() is False
@@ -357,6 +467,8 @@ class TestService:
     ("250 rupees to jyati", 250.0),
     ("1 rupee", 1.0),
     ("₹२५०", 250.0),
+    ("जयती को ₹250 भेजो", 250.0),         # live Gnani, itn_native_numerals=false
+    ("जयती को ₹२५० भेजो", 250.0),         # live Gnani, itn_native_numerals=true
     ("रमेश को ₹१,५०,००० भेजो", 150000.0),
     ("२५० रुपये भेजो", 250.0),
     ("₹250 aur ₹100", 250.0),

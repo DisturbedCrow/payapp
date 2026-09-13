@@ -13,6 +13,11 @@ inverse-text-normalised form ("₹1,50,000").
 200 body (the mobile app's contract — keep these keys exactly):
     {"transcript": str, "provider": "gnani"|"mock", "lang": str,
      "latency_ms": int, "entities": {"amount": float|null}}
+plus one extra, non-contract key: "model" (Gnani's model, default
+"gnani-prisma-v2.5"; "mock" in mock mode).
+
+503 body: {"fallback": true, "provider": "gnani", "reason": timeout |
+transport_error | rate_limited | http_<code> | provider_error | no_transcript}
 """
 
 import itertools
@@ -54,9 +59,10 @@ def _next_mock_transcript() -> str:
 
 
 def _emit(provider: str, lang: str, latency_ms: int, ok: bool, user: User,
-          amount: Optional[float] = None) -> None:
+          amount: Optional[float] = None, reason: Optional[str] = None) -> None:
     try:
         from ..services import ops_events as ops
+        extra = {"reason": reason} if reason else {}
         ops.emit(
             "voice_transcribed",
             provider=provider,
@@ -65,6 +71,7 @@ def _emit(provider: str, lang: str, latency_ms: int, ok: bool, user: User,
             ok=ok,
             amount=amount,
             user=ops.mask_user(getattr(user, "full_name", ""), getattr(user, "id", "")),
+            **extra,
         )
     except Exception:
         pass
@@ -95,18 +102,20 @@ def transcribe(
     if not gnani.is_configured():
         transcript = _next_mock_transcript()
         provider = "mock"
+        model = "mock"
     else:
         result = gnani.transcribe(audio, audio_file.filename or "audio.wav", lang)
         latency_ms = int((time.monotonic() - started) * 1000)
         if not result:
             reason = gnani.last_failure_reason()
-            _emit("gnani", lang, latency_ms, False, current_user)
+            _emit("gnani", lang, latency_ms, False, current_user, reason=reason)
             return JSONResponse(
                 status_code=503,
                 content={"fallback": True, "provider": "gnani", "reason": reason},
             )
         transcript = result["transcript"]
         provider = "gnani"
+        model = result.get("model") or gnani.DEFAULT_MODEL
 
     latency_ms = int((time.monotonic() - started) * 1000)
     amount = gnani.extract_amount(transcript)
@@ -118,4 +127,6 @@ def transcribe(
         "lang": lang,
         "latency_ms": latency_ms,
         "entities": {"amount": amount},
+        # Extra, non-contract key. output.literal is deliberately not passed on.
+        "model": model,
     }

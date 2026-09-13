@@ -11,7 +11,7 @@ GEMINI_API_KEY + GEMINI_MODEL is proven by generated_by == "llm". Voice STT
 is proven by posting a generated silent WAV to /api/ai/transcribe.
 Exits non-zero on any failure.
 """
-import base64, io, sys, time, uuid, wave
+import base64, io, os, sys, time, uuid, wave
 from datetime import datetime, timezone
 
 import requests
@@ -108,23 +108,38 @@ def silent_wav(seconds=1, rate=16000):
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
         w.writeframes(b"\x00\x00" * rate * seconds)
     return buf.getvalue()
+# A real 2.24 s Hindi clip ("jayati ko do sau pachas rupaye bhejo") when it is
+# checked in; generated silence otherwise.
+CLIP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "pay_jyati_250_hi.wav")
+REAL_CLIP = os.path.exists(CLIP)
+if REAL_CLIP:
+    with open(CLIP, "rb") as fh:
+        audio, audio_name = fh.read(), os.path.basename(CLIP)
+else:
+    audio, audio_name = silent_wav(), "silence.wav"
 # No JSON Content-Type here: requests must write the multipart boundary itself.
 r = requests.post(f"{B}/api/ai/transcribe", headers={"Authorization": f"Bearer {atok}"},
-                  files={"audio_file": ("silence.wav", silent_wav(), "audio/wav")},
+                  files={"audio_file": (audio_name, audio, "audio/wav")},
                   data={"lang": "hi-IN"}, timeout=40)
 try: j = r.json()
 except ValueError: j = {}
-if r.status_code == 200:
-    c("voice STT /api/ai/transcribe", j.get("provider") in ("mock", "gnani") and "amount" in (j.get("entities") or {}),
-      f"provider={j.get('provider')} {j.get('latency_ms')} ms — {j.get('transcript')!r}")
+label = f"voice STT /api/ai/transcribe ({'real Hindi clip' if REAL_CLIP else 'silence'})"
+gnani_live = VOICE == "gnani" if TOKEN else j.get("provider") == "gnani"
+amount = (j.get("entities") or {}).get("amount")
+said = f"provider={j.get('provider')} model={j.get('model')} {j.get('latency_ms')} ms — {j.get('transcript')!r} amount={amount}"
+if REAL_CLIP and gnani_live:
+    # The real clip against live Gnani must round-trip to exactly Rs 250.
+    c(label + " -> Rs 250", r.status_code == 200 and j.get("provider") == "gnani" and amount == 250.0,
+      said if r.status_code == 200 else f"HTTP {r.status_code} reason={j.get('reason')}")
+elif r.status_code == 200:
+    c(label, j.get("provider") in ("mock", "gnani") and "amount" in (j.get("entities") or {}), said)
 elif r.status_code == 503:
     # Silence can legitimately yield no transcript; a 503 fallback is only a
     # pass when the live provider really is Gnani.
-    gnani_live = VOICE == "gnani" if TOKEN else j.get("provider") == "gnani"
-    c("voice STT /api/ai/transcribe", j.get("fallback") is True and gnani_live,
+    c(label, j.get("fallback") is True and gnani_live,
       f"provider=gnani fallback ({j.get('reason')}), config voice_provider={VOICE}")
 else:
-    c("voice STT /api/ai/transcribe", False, f"HTTP {r.status_code}")
+    c(label, False, f"HTTP {r.status_code}")
 
 print("\n── remaining routes ──")
 for p in ("/api/auth/me", "/api/tokens/active", "/api/sync/status", "/api/dashboard/user", "/api/device/list", "/api/user/offline-limit", "/api/contacts"):
