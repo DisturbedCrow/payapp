@@ -161,6 +161,22 @@ class OfflineLimitService {
     return true;
   }
 
+  /// Fetches and caches only the risk-model inputs, leaving the limit and
+  /// its remaining balance untouched. Login issues the limit through token
+  /// issuance, which carries no features — without this the edge engine has
+  /// nothing to score until the first sync, and a phone that logs in and goes
+  /// straight to airplane mode silently falls back to the flat penalty.
+  /// Never throws; returns whether features were stored.
+  Future<bool> refreshRiskFeatures() async {
+    try {
+      final response = await _api.get('/api/user/offline-limit');
+      return await cacheRiskFeatures(response['features'],
+          clearIfMissing: true);
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// The last risk-model inputs the server sent, or null (never fetched,
   /// older backend, corrupt entry).
   Future<RiskFeatures?> getCachedRiskFeatures() async {

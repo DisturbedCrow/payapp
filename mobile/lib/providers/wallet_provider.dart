@@ -51,6 +51,10 @@ class WalletProvider extends ChangeNotifier {
 
       // Persist limit to SharedPrefs so it's available offline for 24h
       await _limitService.updateLimitFromSync(_offlineLimit);
+      // Feature I: token issuance carries no risk-model inputs; cache them
+      // now so the on-device engine can reprice from the very first offline
+      // payment.
+      await _limitService.refreshRiskFeatures();
 
       _isLoading = false;
       notifyListeners();
