@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../config/constants.dart';
 import '../config/theme.dart';
+import '../ml/edge_limit_engine.dart';
 import '../services/limit_explanation_service.dart';
 
 /// The GenAI risk explainer card (Feature D, mobile side).
@@ -10,6 +11,11 @@ import '../services/limit_explanation_service.dart';
 /// Sits directly under the offline-limit badge on the dashboard: a white
 /// 16px-radius card whose headline expands to reveal the "why" and a tip.
 /// A compact `EN | हिं` toggle in the top-right switches language.
+///
+/// Feature I3: when offline (or the fetch fails) and the on-device edge
+/// engine has repriced the limit since the server last spoke, the card shows
+/// a template explanation built from the engine's own factors instead of the
+/// stale server copy, marked "computed on-device".
 ///
 /// Never blocks the dashboard: if there is no cache and no network it
 /// renders [SizedBox.shrink] rather than a spinner that cannot resolve.
@@ -38,6 +44,7 @@ class LimitExplanationCard extends StatefulWidget {
 
 class LimitExplanationCardState extends State<LimitExplanationCard> {
   final LimitExplanationService _service = LimitExplanationService();
+  final EdgeLimitEngine _edge = EdgeLimitEngine();
 
   LimitExplanation? _data;
   String _lang = 'en';
@@ -46,12 +53,27 @@ class LimitExplanationCardState extends State<LimitExplanationCard> {
   @override
   void initState() {
     super.initState();
-    if (AppConstants.riskExplainerEnabled) _bootstrap();
+    if (AppConstants.riskExplainerEnabled) {
+      _edge.latest.addListener(_onEdgeReprice);
+      _bootstrap();
+    }
+  }
+
+  @override
+  void dispose() {
+    _edge.latest.removeListener(_onEdgeReprice);
+    super.dispose();
   }
 
   /// Forces a re-fetch. Call this from the dashboard after a sync completes.
   /// Resolves even when offline (it simply re-reads the cache).
   Future<void> refresh() => _fetch(force: true);
+
+  /// Opens the details (the dashboard's badge tap scrolls here first).
+  void expand() {
+    if (!mounted || _expanded) return;
+    setState(() => _expanded = true);
+  }
 
   // ── Loading ───────────────────────────────────────────────────
 
@@ -60,10 +82,12 @@ class LimitExplanationCardState extends State<LimitExplanationCard> {
     if (!mounted) return;
     setState(() => _lang = lang);
 
-    // Paint the cache before the network answers so there is no flicker.
-    final cache = await _service.cached(lang: lang);
+    // Paint something before the network answers so there is no flicker:
+    // a fresher on-device explanation first, else the server cache.
+    final first =
+        await _edge.offlineExplanation(lang) ?? await _service.cached(lang: lang);
     if (!mounted) return;
-    if (cache != null) setState(() => _data = cache);
+    if (first != null) setState(() => _data = first);
 
     await _fetch();
   }
@@ -75,8 +99,23 @@ class LimitExplanationCardState extends State<LimitExplanationCard> {
     } catch (_) {
       result = null; // the service already swallows failures; belt and braces
     }
+    // Offline or the request failed: the edge engine's own explanation beats
+    // a cached server copy that predates the on-device reprice.
+    if (result == null || result.fromCache) {
+      result = await _edge.offlineExplanation(_lang) ?? result;
+    }
     if (!mounted || result == null) return;
     setState(() => _data = result);
+  }
+
+  /// A reprice while the card shows cached or on-device copy: rebuild it
+  /// locally, with no network round-trip.
+  Future<void> _onEdgeReprice() async {
+    final current = _data;
+    if (current != null && !current.fromCache && !current.isOnDevice) return;
+    final edge = await _edge.offlineExplanation(_lang);
+    if (!mounted || edge == null) return;
+    setState(() => _data = edge);
   }
 
   Future<void> _switchLang(String lang) async {
@@ -89,12 +128,15 @@ class LimitExplanationCardState extends State<LimitExplanationCard> {
     // degraded network.
     widget.onLangChanged?.call(lang);
 
-    // Offline, the other language's cache (if we ever fetched it) shows
-    // instantly. If there is none we keep the current copy on screen rather
-    // than blanking the card mid-demo.
-    final cache = await _service.cached(lang: lang);
+    // Offline, the other language's copy shows instantly: rebuilt on-device
+    // when that is what is on screen, else the cache (if we ever fetched
+    // it). If there is none we keep the current copy on screen rather than
+    // blanking the card mid-demo.
+    final LimitExplanation? instant = _data?.isOnDevice == true
+        ? await _edge.offlineExplanation(lang)
+        : await _service.cached(lang: lang);
     if (!mounted) return;
-    if (cache != null) setState(() => _data = cache);
+    if (instant != null) setState(() => _data = instant);
 
     await _fetch(force: true);
   }
@@ -142,7 +184,10 @@ class LimitExplanationCardState extends State<LimitExplanationCard> {
                   : CrossFadeState.showFirst,
               sizeCurve: Curves.easeOut,
             ),
-            if (data.fromCache) _asOfLabel(data),
+            if (data.isOnDevice)
+              _onDeviceLabel(data)
+            else if (data.fromCache)
+              _asOfLabel(data),
           ],
         ),
       ),
@@ -231,6 +276,28 @@ class LimitExplanationCardState extends State<LimitExplanationCard> {
       child: Text(
         'as of ${_formatTime(data.generatedAt)}',
         style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+      ),
+    );
+  }
+
+  /// Subtle marker for copy the phone wrote itself from the edge engine.
+  Widget _onDeviceLabel(LimitExplanation data) {
+    final text = _lang == 'hi'
+        ? 'phone par calculate hua · ${_formatTime(data.generatedAt)}'
+        : 'computed on-device · as of ${_formatTime(data.generatedAt)}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(Icons.memory, size: 12, color: Colors.grey.shade500),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -4,6 +4,10 @@ import '../../config/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/transaction_provider.dart';
+import '../../ml/edge_limit_engine.dart';
+import '../../services/connectivity_service.dart';
+import '../../widgets/edge_limit_source_label.dart';
+import '../../widgets/edge_model_feed_sheet.dart';
 import '../../widgets/limit_explanation_card.dart';
 import '../../widgets/transaction_tile.dart';
 import '../../config/theme.dart';
@@ -25,6 +29,55 @@ class _UserDashboardState extends State<UserDashboard> {
   // limit, so the card visibly updates on stage.
   final _explainerKey = GlobalKey<LimitExplanationCardState>();
 
+  final EdgeLimitEngine _edge = EdgeLimitEngine();
+
+  @override
+  void initState() {
+    super.initState();
+    // Feature I2: whenever the on-device engine reprices (a payment, a sync,
+    // this dashboard), repaint the badge from the rewritten limit.
+    _edge.latest.addListener(_onEdgeReprice);
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _repriceIfOffline('dashboard'));
+  }
+
+  @override
+  void dispose() {
+    _edge.latest.removeListener(_onEdgeReprice);
+    super.dispose();
+  }
+
+  void _onEdgeReprice() {
+    if (!mounted) return;
+    context.read<WalletProvider>().loadCachedTokens();
+  }
+
+  /// Offline, re-score the limit on the phone: sync age keeps growing while
+  /// the dashboard sits there. Online, the server number stands.
+  Future<void> _repriceIfOffline(String reason) async {
+    bool online;
+    try {
+      online = await ConnectivityService().checkNow();
+    } catch (_) {
+      return; // no connectivity plugin (tests): leave the limit alone
+    }
+    if (online || !mounted) return;
+    await _edge.repriceOffline(reason: reason);
+  }
+
+  /// Badge tap: bring "Why this limit?" into view and open it.
+  Future<void> _showLimitExplanationCard() async {
+    final cardContext = _explainerKey.currentContext;
+    if (cardContext == null) return;
+    await Scrollable.ensureVisible(
+      cardContext,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      alignment: 0.2,
+    );
+    _explainerKey.currentState?.expand();
+  }
+
   Future<void> _refresh() async {
     final auth = context.read<AuthProvider>();
     final wallet = context.read<WalletProvider>();
@@ -34,6 +87,8 @@ class _UserDashboardState extends State<UserDashboard> {
     if (wallet.isOnline) {
       await wallet.requestTokens();
       await txProvider.fetchServerTransactions(isUser: true, userId: auth.user?.id);
+    } else {
+      await _repriceIfOffline('refresh');
     }
     // Not awaited: the card resolves offline too, and awaiting it would hold
     // the pull-to-refresh spinner for the whole request timeout on bad Wi-Fi.
@@ -367,6 +422,9 @@ class _UserDashboardState extends State<UserDashboard> {
                                     .findAncestorStateOfType<HomeScreenState>()
                                     ?.setTab(2),
                               ),
+                              // Feature I3: where the number came from, live.
+                              // Tap -> "Why this limit?"; long-press -> the
+                              // edge model feed (airplane-mode proof).
                               _GridItem(
                                 icon: Icons.offline_bolt,
                                 label: 'Offline Limit',
@@ -374,9 +432,12 @@ class _UserDashboardState extends State<UserDashboard> {
                                 badge:
                                     '₹${wallet.offlineLimitRemaining.toStringAsFixed(0)}',
                                 badgeColor: AppTheme.navyBlue,
-                                onTap: () => context
-                                    .findAncestorStateOfType<HomeScreenState>()
-                                    ?.setTab(1),
+                                subLabel: const SizedBox(
+                                  width: 84,
+                                  child: EdgeLimitSourceLabel(),
+                                ),
+                                onTap: _showLimitExplanationCard,
+                                onLongPress: () => showEdgeModelFeed(context),
                               ),
                               _GridItem(
                                 icon: Icons.people,
@@ -1263,6 +1324,10 @@ class _GridItem extends StatelessWidget {
   final String? badge;
   final Color? badgeColor;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  /// Optional line under [label] (the offline limit's source label).
+  final Widget? subLabel;
 
   const _GridItem({
     required this.icon,
@@ -1271,12 +1336,15 @@ class _GridItem extends StatelessWidget {
     this.badge,
     this.badgeColor,
     this.onTap,
+    this.onLongPress,
+    this.subLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1330,6 +1398,10 @@ class _GridItem extends StatelessWidget {
               height: 1.2,
             ),
           ),
+          if (subLabel != null) ...[
+            const SizedBox(height: 2),
+            subLabel!,
+          ],
         ],
       ),
     );

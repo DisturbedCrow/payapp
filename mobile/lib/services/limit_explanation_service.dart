@@ -46,8 +46,15 @@ class LimitExplanation {
     this.fromCache = false,
   });
 
+  /// [generatedBy] value for copy built on the phone by the edge engine
+  /// (Feature I3) from its own factors, while offline.
+  static const String onDevice = 'on-device';
+
   /// Whether the copy came from the GenAI model (drives the "AI" badge).
   bool get isAiGenerated => generatedBy == 'llm';
+
+  /// Whether the copy was built on-device from the edge engine's factors.
+  bool get isOnDevice => generatedBy == onDevice;
 
   /// Parses either a raw backend response or a cache entry written by
   /// [toJson]. Cache entries carry `fetched_at`; raw responses do not, so a
