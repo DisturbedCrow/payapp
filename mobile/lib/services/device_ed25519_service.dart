@@ -46,6 +46,13 @@ class DeviceEd25519Service {
   @visibleForTesting
   static Future<void> Function(String sk, String pk)? persistOverride;
 
+  /// Test seam for the two backend calls. A null [body] means GET.
+  @visibleForTesting
+  static Future<Map<String, dynamic>> Function(
+    String endpoint,
+    Map<String, dynamic>? body,
+  )? apiOverride;
+
   // ── Public API ────────────────────────────────────────────────
 
   /// Generate the keypair on first call; idempotent afterwards.
@@ -131,11 +138,21 @@ class DeviceEd25519Service {
       final pk = await publicKeyB64();
       if (pk.isEmpty) return false;
 
+      // The local marker alone is not proof: a free-tier backend that slept
+      // comes back with a fresh, reseeded database — same user id, no key —
+      // and every blob this phone signs would then be refused as
+      // `unsigned_device`. So confirm the server still holds this exact key.
+      // Offline, the GET throws and we fall through to `false`.
       final stored = await _read();
-      if (stored[_registeredKey] == '$userId:$pk') return true;
+      if (stored[_registeredKey] == '$userId:$pk') {
+        final held = await _call('/api/auth/device-key', null);
+        if (held['registered'] == true && held['public_key_b64'] == pk) {
+          return true;
+        }
+      }
 
-      final response = await ApiService()
-          .post('/api/auth/device-key', {'public_key_b64': pk});
+      final response =
+          await _call('/api/auth/device-key', {'public_key_b64': pk});
       final status = response['status'];
       if (status == 'registered' || status == 'rotated') {
         await _remember('$userId:$pk');
@@ -152,6 +169,17 @@ class DeviceEd25519Service {
     try {
       await _storage.delete(key: _registeredKey);
     } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>> _call(
+    String endpoint,
+    Map<String, dynamic>? body,
+  ) {
+    final override = apiOverride;
+    if (override != null) return override(endpoint, body);
+    return body == null
+        ? ApiService().get(endpoint)
+        : ApiService().post(endpoint, body);
   }
 
   // ── Storage ───────────────────────────────────────────────────

@@ -95,6 +95,15 @@ class SyncEngine {
         return {'synced': 0, 'rejected': 0};
       }
 
+      // Feature B: make sure the server holds our Ed25519 key BEFORE it
+      // verifies blobs signed with it. Covers a key that could not be
+      // registered at login (airplane mode) and a backend that restarted
+      // with an empty database — otherwise this batch would be refused as
+      // `unsigned_device`. One cheap GET when already registered.
+      if (_currentUserId != null) {
+        await DeviceEd25519Service().registerWithBackend(_currentUserId!);
+      }
+
       // Submit the batch
       final response = await _api.post('/api/offline/sync', {
         'blobs': pending.map((b) => b.toJson()).toList(),
@@ -150,13 +159,6 @@ class SyncEngine {
         final restored = (current + limitToRestore).clamp(0.0, total);
         // Only restore the remaining balance — do NOT reset total or expiry
         await _limitService.updateRemainingOnly(restored);
-      }
-
-      // Feature B retry hook: if the key could not be registered at login
-      // (airplane mode, backend asleep), catch up now that we are demonstrably
-      // online. Cheap and idempotent — it short-circuits once registered.
-      if (_currentUserId != null) {
-        await DeviceEd25519Service().registerWithBackend(_currentUserId!);
       }
 
       // Fetch fresh limit from backend after sync
