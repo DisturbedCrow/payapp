@@ -225,6 +225,26 @@ void main() {
       expect((await r.capture()).engine, same(gnani));
     });
 
+    test('no_transcript (a mumble, silence) backs off 20 s, not 3 minutes',
+        () async {
+      gnani.error = const GnaniUnavailable('no_transcript', statusCode: 503);
+      final r = router();
+      final c = await r.capture();
+      expect(c.fellBack, isTrue);
+      expect(r.degradedUntil, clock.add(const Duration(seconds: 20)));
+
+      gnani.error = null;
+      clock = clock.add(const Duration(seconds: 21));
+      expect((await r.capture()).engine, same(gnani));
+    });
+
+    test('an outage still keeps voice on-device for the full window', () {
+      const outage = GnaniUnavailable('timeout', statusCode: 503);
+      expect(outage.isShortLived, isFalse);
+      expect(const GnaniUnavailable('no_transcript').isShortLived, isTrue);
+      expect(const GnaniUnavailable('rate_limited').isShortLived, isTrue);
+    });
+
     test('HTTP 429 also counts as rate limiting', () {
       expect(const GnaniUnavailable('slow down', statusCode: 429).isRateLimited,
           isTrue);

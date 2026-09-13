@@ -88,6 +88,15 @@ class GnaniUnavailable implements Exception {
   /// The provider throttled us — a short-lived condition, unlike an outage.
   bool get isRateLimited => reason == 'rate_limited' || statusCode == 429;
 
+  /// Gnani heard nothing it could transcribe: a mumble, a noisy venue, a
+  /// clip that was all silence. The service is fine — the next utterance
+  /// should still go to the cloud.
+  bool get isNoTranscript => reason == 'no_transcript';
+
+  /// Conditions that clear in seconds, so the router backs off briefly
+  /// instead of keeping voice on-device for minutes.
+  bool get isShortLived => isRateLimited || isNoTranscript;
+
   @override
   String toString() => 'GnaniUnavailable($reason'
       '${statusCode == null ? '' : ', HTTP $statusCode'})';

@@ -149,7 +149,7 @@ class VoiceRouter {
       final result = await chosen.listenOnce(timeout: timeout, lang: lang);
       return VoiceCapture(result: result, engine: chosen);
     } on GnaniUnavailable catch (e) {
-      final backOff = e.isRateLimited ? rateLimitedFor : degradedFor;
+      final backOff = e.isShortLived ? rateLimitedFor : degradedFor;
       debugPrint('VoiceRouter: $e — on-device for ${backOff.inSeconds}s');
       markGnaniDegraded(backOff);
 
