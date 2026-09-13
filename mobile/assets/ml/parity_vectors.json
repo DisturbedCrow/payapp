@@ -1,0 +1,999 @@
+{
+ "tolerance": 0.02,
+ "vectors": [
+  {
+   "name": "ashmita (stage sender)",
+   "features": {
+    "transaction_count": 214.0,
+    "avg_transaction_amount": 340.0,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.95,
+    "days_since_registration": 420.0,
+    "fraud_flags": 0.0,
+    "total_spent": 72760.0
+   },
+   "expected_score": 0.00041769087284378626,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "alice",
+   "features": {
+    "transaction_count": 45.0,
+    "avg_transaction_amount": 250.0,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.85,
+    "days_since_registration": 200.0,
+    "fraud_flags": 0.0,
+    "total_spent": 11250.0
+   },
+   "expected_score": 0.0005766106918563751,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "bob",
+   "features": {
+    "transaction_count": 12.0,
+    "avg_transaction_amount": 150.0,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.65,
+    "days_since_registration": 90.0,
+    "fraud_flags": 0.0,
+    "total_spent": 1800.0
+   },
+   "expected_score": 0.0008577612364885046,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "charlie (1 fraud flag)",
+   "features": {
+    "transaction_count": 3.0,
+    "avg_transaction_amount": 80.0,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.4,
+    "days_since_registration": 20.0,
+    "fraud_flags": 1.0,
+    "total_spent": 240.0
+   },
+   "expected_score": 0.09316185218000728,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "attacker",
+   "features": {
+    "transaction_count": 0.0,
+    "avg_transaction_amount": 0.0,
+    "kyc_tier": 0.0,
+    "device_trust_score": 0.15,
+    "days_since_registration": 1.0,
+    "fraud_flags": 1.0,
+    "total_spent": 0.0
+   },
+   "expected_score": 0.8108957998812479,
+   "expected_limit": 100.0
+  },
+  {
+   "name": "jyati (merchant)",
+   "features": {
+    "transaction_count": 180.0,
+    "avg_transaction_amount": 290.0,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.92,
+    "days_since_registration": 365.0,
+    "fraud_flags": 0.0,
+    "total_spent": 52200.0
+   },
+   "expected_score": 0.00047253138674727276,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "shopkeeper (new merchant)",
+   "features": {
+    "transaction_count": 0.0,
+    "avg_transaction_amount": 0.0,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.7,
+    "days_since_registration": 30.0,
+    "fraud_flags": 0.0,
+    "total_spent": 0.0
+   },
+   "expected_score": 0.0010489337153961498,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "ashmita + 2 fraud flags",
+   "features": {
+    "transaction_count": 214.0,
+    "avg_transaction_amount": 340.0,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.95,
+    "days_since_registration": 420.0,
+    "fraud_flags": 2.0,
+    "total_spent": 72760.0
+   },
+   "expected_score": 0.33431574599832214,
+   "expected_limit": 3000.0
+  },
+  {
+   "name": "attacker-ish, trust 0.5",
+   "features": {
+    "transaction_count": 0.0,
+    "avg_transaction_amount": 0.0,
+    "kyc_tier": 0.0,
+    "device_trust_score": 0.5,
+    "days_since_registration": 1.0,
+    "fraud_flags": 1.0,
+    "total_spent": 0.0
+   },
+   "expected_score": 0.7641372417836699,
+   "expected_limit": 500.0
+  },
+  {
+   "name": "3 fraud flags",
+   "features": {
+    "transaction_count": 20.0,
+    "avg_transaction_amount": 500.0,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.3,
+    "days_since_registration": 10.0,
+    "fraud_flags": 3.0,
+    "total_spent": 10000.0
+   },
+   "expected_score": 0.9914609489081084,
+   "expected_limit": 0.0
+  },
+  {
+   "name": "zeros",
+   "features": {
+    "transaction_count": 0.0,
+    "avg_transaction_amount": 0.0,
+    "kyc_tier": 0.0,
+    "device_trust_score": 0.0,
+    "days_since_registration": 0.0,
+    "fraud_flags": 0.0,
+    "total_spent": 0.0
+   },
+   "expected_score": 0.0015302327146143667,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #0",
+   "features": {
+    "transaction_count": 47.0,
+    "avg_transaction_amount": 279.33387167665785,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.8916342067946071,
+    "days_since_registration": 106.0,
+    "fraud_flags": 0.0,
+    "total_spent": 3807.832400774513
+   },
+   "expected_score": 0.0006844393716559684,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #1",
+   "features": {
+    "transaction_count": 55.0,
+    "avg_transaction_amount": 392.50703068164285,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.34929531978774964,
+    "days_since_registration": 125.0,
+    "fraud_flags": 0.0,
+    "total_spent": 1712.9466179379265
+   },
+   "expected_score": 0.000882884494133623,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #2",
+   "features": {
+    "transaction_count": 42.0,
+    "avg_transaction_amount": 276.3891847690652,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.3189116825818572,
+    "days_since_registration": 50.0,
+    "fraud_flags": 2.0,
+    "total_spent": 1295.9334745189399
+   },
+   "expected_score": 0.9540445201701793,
+   "expected_limit": 0.0
+  },
+  {
+   "name": "synthetic #3",
+   "features": {
+    "transaction_count": 52.0,
+    "avg_transaction_amount": 30.869704933462526,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.6029741072112611,
+    "days_since_registration": 114.0,
+    "fraud_flags": 0.0,
+    "total_spent": 691.9868728560635
+   },
+   "expected_score": 0.0005922299725262657,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #4",
+   "features": {
+    "transaction_count": 58.0,
+    "avg_transaction_amount": 71.72668285376174,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.739364767237509,
+    "days_since_registration": 195.0,
+    "fraud_flags": 1.0,
+    "total_spent": 10449.761197649656
+   },
+   "expected_score": 0.0023415972022777947,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #5",
+   "features": {
+    "transaction_count": 43.0,
+    "avg_transaction_amount": 115.87144739213763,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.6518880221510198,
+    "days_since_registration": 250.0,
+    "fraud_flags": 1.0,
+    "total_spent": 2299.0938529288314
+   },
+   "expected_score": 0.07188974349187341,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #6",
+   "features": {
+    "transaction_count": 46.0,
+    "avg_transaction_amount": 137.76737452055875,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.6624903873660631,
+    "days_since_registration": 252.0,
+    "fraud_flags": 0.0,
+    "total_spent": 1859.3154465083126
+   },
+   "expected_score": 0.0011714997726319793,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #7",
+   "features": {
+    "transaction_count": 49.0,
+    "avg_transaction_amount": 276.0748701391772,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.6461474341873301,
+    "days_since_registration": 155.0,
+    "fraud_flags": 1.0,
+    "total_spent": 2214.2724252560765
+   },
+   "expected_score": 0.03940591080513092,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #8",
+   "features": {
+    "transaction_count": 52.0,
+    "avg_transaction_amount": 177.27478757915196,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.7478010540946525,
+    "days_since_registration": 422.0,
+    "fraud_flags": 1.0,
+    "total_spent": 1076.7551531624474
+   },
+   "expected_score": 0.03371566849445506,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #9",
+   "features": {
+    "transaction_count": 45.0,
+    "avg_transaction_amount": 39.04268915785826,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.34074574897762533,
+    "days_since_registration": 306.0,
+    "fraud_flags": 0.0,
+    "total_spent": 1868.6524962087178
+   },
+   "expected_score": 0.02492617072235412,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #10",
+   "features": {
+    "transaction_count": 49.0,
+    "avg_transaction_amount": 217.06521774840763,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.8553095000178123,
+    "days_since_registration": 254.0,
+    "fraud_flags": 3.0,
+    "total_spent": 4057.9967603151395
+   },
+   "expected_score": 0.9942488112579286,
+   "expected_limit": 0.0
+  },
+  {
+   "name": "synthetic #11",
+   "features": {
+    "transaction_count": 43.0,
+    "avg_transaction_amount": 273.30427782067954,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.6876763455486924,
+    "days_since_registration": 10.0,
+    "fraud_flags": 1.0,
+    "total_spent": 631.940030638746
+   },
+   "expected_score": 0.011215610541558129,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #12",
+   "features": {
+    "transaction_count": 52.0,
+    "avg_transaction_amount": 259.76839561431694,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.8143858156663423,
+    "days_since_registration": 1.0,
+    "fraud_flags": 0.0,
+    "total_spent": 785.2263423148817
+   },
+   "expected_score": 0.0006736345332675892,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #13",
+   "features": {
+    "transaction_count": 52.0,
+    "avg_transaction_amount": 437.3705278052177,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.45231618357634074,
+    "days_since_registration": 42.0,
+    "fraud_flags": 0.0,
+    "total_spent": 23562.839213932555
+   },
+   "expected_score": 0.0013545870140436386,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #14",
+   "features": {
+    "transaction_count": 46.0,
+    "avg_transaction_amount": 341.6962397583206,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.6886229240120414,
+    "days_since_registration": 196.0,
+    "fraud_flags": 0.0,
+    "total_spent": 1729.9801281384268
+   },
+   "expected_score": 0.0014861253558565116,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #15",
+   "features": {
+    "transaction_count": 54.0,
+    "avg_transaction_amount": 234.9047421065482,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.9056669757429177,
+    "days_since_registration": 95.0,
+    "fraud_flags": 1.0,
+    "total_spent": 1303.3052107045755
+   },
+   "expected_score": 0.022979722887946138,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #16",
+   "features": {
+    "transaction_count": 40.0,
+    "avg_transaction_amount": 138.3565831689896,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.6676705946208079,
+    "days_since_registration": 92.0,
+    "fraud_flags": 2.0,
+    "total_spent": 397.10176849827104
+   },
+   "expected_score": 0.7680661929986783,
+   "expected_limit": 500.0
+  },
+  {
+   "name": "synthetic #17",
+   "features": {
+    "transaction_count": 45.0,
+    "avg_transaction_amount": 28.192023025268316,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.8359454082292946,
+    "days_since_registration": 388.0,
+    "fraud_flags": 0.0,
+    "total_spent": 10678.807577257803
+   },
+   "expected_score": 0.0009334045409648445,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #18",
+   "features": {
+    "transaction_count": 46.0,
+    "avg_transaction_amount": 228.0621590322029,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.7529841532411512,
+    "days_since_registration": 406.0,
+    "fraud_flags": 0.0,
+    "total_spent": 611.6200642822803
+   },
+   "expected_score": 0.0010195698798499894,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #19",
+   "features": {
+    "transaction_count": 51.0,
+    "avg_transaction_amount": 182.67117655833738,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.5540484708203021,
+    "days_since_registration": 431.0,
+    "fraud_flags": 0.0,
+    "total_spent": 2913.3561406750164
+   },
+   "expected_score": 0.0007342658393789574,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #20",
+   "features": {
+    "transaction_count": 64.0,
+    "avg_transaction_amount": 194.72315603879915,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.9791921783440044,
+    "days_since_registration": 67.0,
+    "fraud_flags": 0.0,
+    "total_spent": 229.9179246811825
+   },
+   "expected_score": 0.0003936375885420635,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #21",
+   "features": {
+    "transaction_count": 52.0,
+    "avg_transaction_amount": 41.39878051258577,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.7960517462881084,
+    "days_since_registration": 211.0,
+    "fraud_flags": 0.0,
+    "total_spent": 10170.627625356958
+   },
+   "expected_score": 0.0009061138270543984,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #22",
+   "features": {
+    "transaction_count": 38.0,
+    "avg_transaction_amount": 50.34722279210333,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.9431702483507759,
+    "days_since_registration": 57.0,
+    "fraud_flags": 1.0,
+    "total_spent": 17418.434274041058
+   },
+   "expected_score": 0.005122058921772615,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #23",
+   "features": {
+    "transaction_count": 33.0,
+    "avg_transaction_amount": 425.4523063865867,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.5534218414006792,
+    "days_since_registration": 38.0,
+    "fraud_flags": 1.0,
+    "total_spent": 6165.8452955883295
+   },
+   "expected_score": 0.11596544349531632,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #24",
+   "features": {
+    "transaction_count": 48.0,
+    "avg_transaction_amount": 142.6572423080581,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.5107909125551564,
+    "days_since_registration": 36.0,
+    "fraud_flags": 2.0,
+    "total_spent": 298.3537320608065
+   },
+   "expected_score": 0.8903954859040468,
+   "expected_limit": 100.0
+  },
+  {
+   "name": "synthetic #25",
+   "features": {
+    "transaction_count": 58.0,
+    "avg_transaction_amount": 293.38938840204526,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.8380810486659841,
+    "days_since_registration": 75.0,
+    "fraud_flags": 0.0,
+    "total_spent": 10489.638253064604
+   },
+   "expected_score": 0.0005321865859480499,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #26",
+   "features": {
+    "transaction_count": 45.0,
+    "avg_transaction_amount": 152.67605300635265,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.8236870315286352,
+    "days_since_registration": 101.0,
+    "fraud_flags": 0.0,
+    "total_spent": 861.7597336440174
+   },
+   "expected_score": 0.0006285831555277511,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #27",
+   "features": {
+    "transaction_count": 41.0,
+    "avg_transaction_amount": 152.89572292095804,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.7159352066091089,
+    "days_since_registration": 319.0,
+    "fraud_flags": 0.0,
+    "total_spent": 514.6783703202356
+   },
+   "expected_score": 0.00103812933674376,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #28",
+   "features": {
+    "transaction_count": 56.0,
+    "avg_transaction_amount": 379.28344667795653,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.8614075715780724,
+    "days_since_registration": 22.0,
+    "fraud_flags": 3.0,
+    "total_spent": 1677.078266645421
+   },
+   "expected_score": 0.9928736260579304,
+   "expected_limit": 0.0
+  },
+  {
+   "name": "synthetic #29",
+   "features": {
+    "transaction_count": 54.0,
+    "avg_transaction_amount": 88.58435587690886,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.644713206837897,
+    "days_since_registration": 238.0,
+    "fraud_flags": 1.0,
+    "total_spent": 1627.741076476437
+   },
+   "expected_score": 0.004344155361954198,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #30",
+   "features": {
+    "transaction_count": 56.0,
+    "avg_transaction_amount": 163.386862271944,
+    "kyc_tier": 0.0,
+    "device_trust_score": 0.506278519122286,
+    "days_since_registration": 136.0,
+    "fraud_flags": 3.0,
+    "total_spent": 1397.4815785563499
+   },
+   "expected_score": 0.9894256107349615,
+   "expected_limit": 0.0
+  },
+  {
+   "name": "synthetic #31",
+   "features": {
+    "transaction_count": 47.0,
+    "avg_transaction_amount": 93.47786883213331,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.5080871653031304,
+    "days_since_registration": 61.0,
+    "fraud_flags": 1.0,
+    "total_spent": 20140.970883872404
+   },
+   "expected_score": 0.007563311300525651,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #32",
+   "features": {
+    "transaction_count": 59.0,
+    "avg_transaction_amount": 96.1109999079311,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.8034444399038491,
+    "days_since_registration": 122.0,
+    "fraud_flags": 0.0,
+    "total_spent": 60945.7251019611
+   },
+   "expected_score": 0.0004495462508901217,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #33",
+   "features": {
+    "transaction_count": 46.0,
+    "avg_transaction_amount": 108.9433341135105,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.5087442765611431,
+    "days_since_registration": 64.0,
+    "fraud_flags": 0.0,
+    "total_spent": 382.3342377494631
+   },
+   "expected_score": 0.001489227734276106,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #34",
+   "features": {
+    "transaction_count": 46.0,
+    "avg_transaction_amount": 185.32921268730578,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.9199747137738206,
+    "days_since_registration": 163.0,
+    "fraud_flags": 3.0,
+    "total_spent": 1060.771135050395
+   },
+   "expected_score": 0.9483216153817247,
+   "expected_limit": 0.0
+  },
+  {
+   "name": "synthetic #35",
+   "features": {
+    "transaction_count": 55.0,
+    "avg_transaction_amount": 91.95059099086463,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.8136297924324303,
+    "days_since_registration": 102.0,
+    "fraud_flags": 2.0,
+    "total_spent": 3692.73444301884
+   },
+   "expected_score": 0.15722238295895857,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #36",
+   "features": {
+    "transaction_count": 60.0,
+    "avg_transaction_amount": 521.0031696799423,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.8596338643524696,
+    "days_since_registration": 32.0,
+    "fraud_flags": 1.0,
+    "total_spent": 1663.9095511007636
+   },
+   "expected_score": 0.12118077259067137,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #37",
+   "features": {
+    "transaction_count": 40.0,
+    "avg_transaction_amount": 60.666563495310875,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.9223131301292562,
+    "days_since_registration": 22.0,
+    "fraud_flags": 0.0,
+    "total_spent": 5426.763115829711
+   },
+   "expected_score": 0.0006069181456852378,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #38",
+   "features": {
+    "transaction_count": 56.0,
+    "avg_transaction_amount": 123.11616687951299,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.7414322652360554,
+    "days_since_registration": 142.0,
+    "fraud_flags": 0.0,
+    "total_spent": 11777.874805403559
+   },
+   "expected_score": 0.0005955320051233182,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #39",
+   "features": {
+    "transaction_count": 56.0,
+    "avg_transaction_amount": 95.60918967316196,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.613929266646287,
+    "days_since_registration": 418.0,
+    "fraud_flags": 1.0,
+    "total_spent": 9173.268294868074
+   },
+   "expected_score": 0.002106780987796405,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #40",
+   "features": {
+    "transaction_count": 50.0,
+    "avg_transaction_amount": 630.7930796982275,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.5021079033165057,
+    "days_since_registration": 75.0,
+    "fraud_flags": 1.0,
+    "total_spent": 7439.8082286417875
+   },
+   "expected_score": 0.009605965651320561,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #41",
+   "features": {
+    "transaction_count": 46.0,
+    "avg_transaction_amount": 180.6487930665551,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.76864734420722,
+    "days_since_registration": 237.0,
+    "fraud_flags": 1.0,
+    "total_spent": 35905.41078553651
+   },
+   "expected_score": 0.0025385301751050804,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #42",
+   "features": {
+    "transaction_count": 61.0,
+    "avg_transaction_amount": 416.48253979540067,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.5596929213050089,
+    "days_since_registration": 193.0,
+    "fraud_flags": 2.0,
+    "total_spent": 274.9471990084371
+   },
+   "expected_score": 0.8541723229482843,
+   "expected_limit": 100.0
+  },
+  {
+   "name": "synthetic #43",
+   "features": {
+    "transaction_count": 48.0,
+    "avg_transaction_amount": 33.597095741317894,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.527011589104387,
+    "days_since_registration": 482.0,
+    "fraud_flags": 1.0,
+    "total_spent": 27451.145814205625
+   },
+   "expected_score": 0.039704748701388994,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #44",
+   "features": {
+    "transaction_count": 44.0,
+    "avg_transaction_amount": 193.84333201437144,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.5443376117267693,
+    "days_since_registration": 309.0,
+    "fraud_flags": 0.0,
+    "total_spent": 1604.4118966211513
+   },
+   "expected_score": 0.001096505786426284,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #45",
+   "features": {
+    "transaction_count": 45.0,
+    "avg_transaction_amount": 361.27187658846697,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.8001799284992234,
+    "days_since_registration": 150.0,
+    "fraud_flags": 0.0,
+    "total_spent": 9678.747980166134
+   },
+   "expected_score": 0.0008479860854184491,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #46",
+   "features": {
+    "transaction_count": 63.0,
+    "avg_transaction_amount": 161.14168181509248,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.6756344003401038,
+    "days_since_registration": 192.0,
+    "fraud_flags": 0.0,
+    "total_spent": 636.1921609609917
+   },
+   "expected_score": 0.0005084232489169552,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #47",
+   "features": {
+    "transaction_count": 53.0,
+    "avg_transaction_amount": 430.7295397133264,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.6696636749096341,
+    "days_since_registration": 411.0,
+    "fraud_flags": 0.0,
+    "total_spent": 762.99800161072
+   },
+   "expected_score": 0.0013135640064139134,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #48",
+   "features": {
+    "transaction_count": 57.0,
+    "avg_transaction_amount": 88.47425005971363,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.5269564320995413,
+    "days_since_registration": 91.0,
+    "fraud_flags": 0.0,
+    "total_spent": 8047.976217257717
+   },
+   "expected_score": 0.0009429806025278651,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #49",
+   "features": {
+    "transaction_count": 60.0,
+    "avg_transaction_amount": 607.4971234766176,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.6058097074088751,
+    "days_since_registration": 71.0,
+    "fraud_flags": 0.0,
+    "total_spent": 165.15839215166494
+   },
+   "expected_score": 0.0007130275227322835,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #50",
+   "features": {
+    "transaction_count": 46.0,
+    "avg_transaction_amount": 1478.669718367371,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.8309702806732958,
+    "days_since_registration": 1.0,
+    "fraud_flags": 0.0,
+    "total_spent": 13149.81695099329
+   },
+   "expected_score": 0.0012898835730150021,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #51",
+   "features": {
+    "transaction_count": 44.0,
+    "avg_transaction_amount": 103.25084745048508,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.43761837506687185,
+    "days_since_registration": 315.0,
+    "fraud_flags": 0.0,
+    "total_spent": 19730.97970752381
+   },
+   "expected_score": 0.0011129350054316812,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #52",
+   "features": {
+    "transaction_count": 48.0,
+    "avg_transaction_amount": 95.05897406225074,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.7965276339730123,
+    "days_since_registration": 290.0,
+    "fraud_flags": 0.0,
+    "total_spent": 3891.995475309555
+   },
+   "expected_score": 0.001052143192891797,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #53",
+   "features": {
+    "transaction_count": 40.0,
+    "avg_transaction_amount": 634.8472870390132,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.8916256557920329,
+    "days_since_registration": 19.0,
+    "fraud_flags": 1.0,
+    "total_spent": 3687.269732843973
+   },
+   "expected_score": 0.15442396838239988,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #54",
+   "features": {
+    "transaction_count": 65.0,
+    "avg_transaction_amount": 720.2311093622504,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.7896251042698473,
+    "days_since_registration": 154.0,
+    "fraud_flags": 2.0,
+    "total_spent": 853.6709222960158
+   },
+   "expected_score": 0.8427757682764968,
+   "expected_limit": 100.0
+  },
+  {
+   "name": "synthetic #55",
+   "features": {
+    "transaction_count": 50.0,
+    "avg_transaction_amount": 87.98267964116997,
+    "kyc_tier": 3.0,
+    "device_trust_score": 0.5740918837206284,
+    "days_since_registration": 112.0,
+    "fraud_flags": 0.0,
+    "total_spent": 8198.234486986361
+   },
+   "expected_score": 0.0006291479694585298,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #56",
+   "features": {
+    "transaction_count": 69.0,
+    "avg_transaction_amount": 97.49617855267479,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.7733953051322833,
+    "days_since_registration": 22.0,
+    "fraud_flags": 0.0,
+    "total_spent": 5021.569783154326
+   },
+   "expected_score": 0.0003367324876465459,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #57",
+   "features": {
+    "transaction_count": 50.0,
+    "avg_transaction_amount": 111.96825472236334,
+    "kyc_tier": 1.0,
+    "device_trust_score": 0.5804085365917708,
+    "days_since_registration": 709.0,
+    "fraud_flags": 0.0,
+    "total_spent": 748.2535611034122
+   },
+   "expected_score": 0.0007084656553026643,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #58",
+   "features": {
+    "transaction_count": 45.0,
+    "avg_transaction_amount": 38.68877433001478,
+    "kyc_tier": 0.0,
+    "device_trust_score": 0.6584354165829547,
+    "days_since_registration": 43.0,
+    "fraud_flags": 0.0,
+    "total_spent": 1657.0266073936064
+   },
+   "expected_score": 0.0017243126271668256,
+   "expected_limit": 5000.0
+  },
+  {
+   "name": "synthetic #59",
+   "features": {
+    "transaction_count": 52.0,
+    "avg_transaction_amount": 59.22525487361559,
+    "kyc_tier": 2.0,
+    "device_trust_score": 0.7356359706310397,
+    "days_since_registration": 12.0,
+    "fraud_flags": 0.0,
+    "total_spent": 2347.243319307957
+   },
+   "expected_score": 0.000798420214882016,
+   "expected_limit": 5000.0
+  }
+ ]
+}

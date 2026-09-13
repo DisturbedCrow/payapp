@@ -35,6 +35,7 @@ dependencies:
   speech_to_text: ^7.4.0        # Feature G: on-device Hindi STT (hi_IN)
   permission_handler: ^12.0.0   # mic / camera rationale prompts
   flutter_tts: ^4.2.5           # G3.5: offline Hindi confirmation readback
+  record: ^7.1.1                # Feature H: 16 kHz WAV capture for Gnani Prisma
 
 dev_dependencies:
   flutter_test:
@@ -43,3 +44,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/ml/   # Feature I: exported risk model + parity vectors
