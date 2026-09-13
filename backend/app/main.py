@@ -60,6 +60,30 @@ def startup_event():
     except Exception as exc:
         print(f"Warning: column migration skipped: {exc}")
 
+    # A fresh deploy (new Render service, wiped SQLite, empty Postgres) has no
+    # users at all, so every demo login would fail with 401. Seed the demo
+    # cast once when — and only when — the users table is empty. Never touches
+    # a database that already has data. Disable with AUTO_SEED_DEMO=false.
+    if os.getenv("AUTO_SEED_DEMO", "true").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            db = SessionLocal()
+            try:
+                empty = db.query(User).first() is None
+            finally:
+                db.close()
+            if empty:
+                import importlib.util
+                seed_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed.py"
+                )
+                spec = importlib.util.spec_from_file_location("setupay_seed", seed_path)
+                seed_mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(seed_mod)
+                seed_mod.seed_database(force=False)
+                print("Empty database detected — seeded the demo cast.")
+        except Exception as exc:
+            print(f"Warning: demo auto-seed skipped: {exc}")
+
     # Seed the ops dashboard's Trust Engine panel from the database so the
     # projector shows real limit bars before the first payment of the demo.
     try:
@@ -77,7 +101,6 @@ def startup_event():
 
     # Try to train ML model if not already trained
     from .config import ML_MODEL_PATH
-    import os
     if not os.path.exists(ML_MODEL_PATH):
         try:
             from .ml.train_model import train_model
