@@ -93,6 +93,25 @@ class QrTransferService {
     }
   }
 
+  /// What to tell a receiver whose scan was not a payment hand-off. Call only
+  /// after [decodeBlobHandoff] returned null. The usual mistake is scanning
+  /// the other person's "My QR Code", which is for getting paid, not a payment.
+  static String explainNotHandoff(String raw) {
+    final receive = parseReceiveQR(raw);
+    if (receive != null) {
+      final name = receive.receiverName;
+      return "That is $name's QR for receiving money — not a payment.\n"
+          'To pay $name, scan it from the Pay screen instead. '
+          'To receive here, scan the QR the sender shows after paying.';
+    }
+    if (parsePaymentQR(raw) != null) {
+      return 'That is an older SetuPay payment QR this screen cannot accept.\n'
+          'Ask the sender to pay again and show the new hand-off QR.';
+    }
+    return 'That QR is not a SetuPay payment.\n'
+        'Ask the sender to open "Hand off via QR" on their phone.';
+  }
+
   // ── Signed-blob handoff QR (Case 3b — both phones offline) ──────
 
   /// Wire format version for [encodeBlobHandoff] / [decodeBlobHandoff].

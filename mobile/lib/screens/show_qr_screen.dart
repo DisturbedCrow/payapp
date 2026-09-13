@@ -35,6 +35,7 @@ class _ShowQRScreenState extends State<ShowQRScreen> {
   String? _bleUuid;
   bool _bleStarting = false;
   bool _bleError = false;
+  bool _bleUnavailable = false;
   String _bleErrorMsg = '';
   PaymentBlob? _lastBlob;
   StreamSubscription? _blobSub;
@@ -63,6 +64,12 @@ class _ShowQRScreenState extends State<ShowQRScreen> {
       if (mounted) setState(() {
         _bleUuid = uuid;
         _bleStarting = false;
+      });
+    } on BleUnavailable {
+      debugPrint('[BLE] no native receiver in this build — QR only');
+      if (mounted) setState(() {
+        _bleStarting = false;
+        _bleUnavailable = true;
       });
     } catch (e) {
       debugPrint('[BLE] startReceiving error: $e');
@@ -120,7 +127,8 @@ class _ShowQRScreenState extends State<ShowQRScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: _BleStatusRow(
-                  starting: _bleStarting, error: _bleError, active: _bleUuid != null, errorMsg: _bleErrorMsg),
+                  starting: _bleStarting, error: _bleError, active: _bleUuid != null, errorMsg: _bleErrorMsg,
+                  unavailable: _bleUnavailable),
             ),
             const SizedBox(height: 12),
 
@@ -314,9 +322,11 @@ class _BleStatusRow extends StatelessWidget {
   final bool error;
   final bool active;
   final String errorMsg;
+  final bool unavailable;
 
   const _BleStatusRow(
-      {required this.starting, required this.error, required this.active, this.errorMsg = ''});
+      {required this.starting, required this.error, required this.active, this.errorMsg = '',
+      this.unavailable = false});
 
   @override
   Widget build(BuildContext context) {
@@ -331,6 +341,19 @@ class _BleStatusRow extends StatelessWidget {
           SizedBox(width: 8),
           Text('Starting Bluetooth…',
               style: TextStyle(fontSize: 12, color: Colors.grey)),
+        ],
+      );
+    }
+    if (unavailable) {
+      return const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.qr_code_2, size: 14, color: Colors.black54),
+          SizedBox(width: 6),
+          Flexible(
+            child: Text('Offline payments use QR on this phone',
+                style: TextStyle(fontSize: 12, color: Colors.black54)),
+          ),
         ],
       );
     }

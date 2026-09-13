@@ -68,6 +68,12 @@ class BLEService {
       _eventSub = _eventCh
           .receiveBroadcastStream()
           .listen(_handleReceivedData, onError: (_) {});
+    } on MissingPluginException {
+      // No native Bluetooth receiver in this build: say so plainly so the
+      // screen can fall back to QR instead of showing a raw exception.
+      _isAdvertising = false;
+      _activeSessionUuid = null;
+      throw const BleUnavailable();
     } catch (e) {
       _isAdvertising = false;
       _activeSessionUuid = null;
@@ -248,4 +254,14 @@ class BLEService {
     stopReceiving();
     _receivedBlobCtrl.close();
   }
+}
+
+/// Thrown by [BLEService.startReceiving] when this build has no native
+/// Bluetooth receiver (the `com.offlinepay/ble_peripheral` channel is not
+/// implemented on this platform). QR hand-off works without it.
+class BleUnavailable implements Exception {
+  const BleUnavailable();
+
+  @override
+  String toString() => 'Bluetooth receiving is not available on this phone';
 }

@@ -89,10 +89,7 @@ class _ReceiveScanScreenState extends State<ReceiveScanScreen> {
     //    never throws, for every other QR the camera might land on.
     final handoff = QrTransferService.decodeBlobHandoff(raw);
     if (handoff == null) {
-      _fail(
-        'That QR is not a SetuPay payment.\n'
-        'Ask the sender to open "Hand off via QR" on their phone.',
-      );
+      _fail(QrTransferService.explainNotHandoff(raw));
       return;
     }
 
