@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
-import '../../config/constants.dart';
+import '../backend_resolver.dart';
 
 /// SSL/TLS certificate pinning for all backend API calls.
 ///
@@ -65,7 +65,9 @@ class CertificatePinningService {
     String host,
     int port,
   ) {
-    final expectedHost = Uri.parse(AppConstants.baseUrl).host;
+    // The backend host is resolved at runtime (see BackendResolver), so the
+    // expected host is whichever one we actually settled on — not a constant.
+    final expectedHost = Uri.parse(BackendResolver().baseUrlSync).host;
     if (host != expectedHost) {
       debugPrint('CERT_PIN: Host mismatch: $host != $expectedHost');
       return false;

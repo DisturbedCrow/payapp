@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/constants.dart';
+import 'backend_resolver.dart';
 import 'security/certificate_pinning_service.dart';
 
 class ApiService {
@@ -39,18 +40,21 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> get(String endpoint) async {
+    final base = await BackendResolver().baseUrl();
     try {
       final response = await _client
-          .get(
-            Uri.parse('${AppConstants.baseUrl}$endpoint'),
-            headers: await _headers(),
-          )
+          .get(Uri.parse('$base$endpoint'), headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException('Connection failed. Check your internet and try again.');
+      // A transport failure usually means the network moved under us — the
+      // phone left the Wi-Fi the laptop is on, or the tunnel restarted.
+      // Forget the resolved host so the next call re-probes instead of
+      // failing against a dead address forever.
+      await BackendResolver().invalidate();
+      throw ApiException(_transportMessage);
     }
   }
 
@@ -58,10 +62,11 @@ class ApiService {
     String endpoint,
     Map<String, dynamic> body,
   ) async {
+    final base = await BackendResolver().baseUrl();
     try {
       final response = await _client
           .post(
-            Uri.parse('${AppConstants.baseUrl}$endpoint'),
+            Uri.parse('$base$endpoint'),
             headers: await _headers(),
             body: jsonEncode(body),
           )
@@ -70,9 +75,17 @@ class ApiService {
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException('Connection failed. Check your internet and try again.');
+      await BackendResolver().invalidate();
+      throw ApiException(_transportMessage);
     }
   }
+
+  /// Shown when no backend could be reached. Says what the user can do, and
+  /// reassures them that an offline payment is still possible — which is the
+  /// entire point of this app.
+  static const String _transportMessage =
+      'Could not reach SetuPay. Check your connection — '
+      'offline payments still work.';
 
   Map<String, dynamic> _handleResponse(http.Response response) {
     // Guard against non-JSON responses (HTML error pages from Render/proxy)

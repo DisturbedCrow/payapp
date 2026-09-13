@@ -17,6 +17,8 @@ python-multipart==0.0.6
 bcrypt==4.0.1
 httpx==0.27.0
 cryptography>=3.3.2
-# Optional: only imported when EXPLAINER_PROVIDER=anthropic. The mock
-# explainer is the always-present fallback, so the app boots without it.
-anthropic>=0.40.0
+# The Gemini provider (the default) needs nothing beyond httpx, already above.
+# The Anthropic provider is optional and imported lazily, so it is left out to
+# keep the Render free-tier build small and fast. Install it only if you set
+# EXPLAINER_PROVIDER=anthropic:
+#   anthropic>=0.40.0

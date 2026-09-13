@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 class AppConstants {
   // ── Branding ─────────────────────────────────────────────────
   static const String appName = 'SetuPay';
@@ -14,15 +12,43 @@ class AppConstants {
   static const bool qrHandoffEnabled = true;
   static const bool riskExplainerEnabled = true;
 
-  // Backend API URL
-  // Override at build time:  flutter run --dart-define=API_URL=https://your-app.onrender.com
-  static const String _envUrl = String.fromEnvironment('API_URL', defaultValue: '');
+  // ── Backend API URL ──────────────────────────────────────────
+  //
+  // There is no single correct address. The same APK has to work for a phone
+  // on the venue Wi-Fi, a phone on 5G, a USB-tethered demo device and a
+  // developer on the office LAN. BackendResolver probes these and uses the
+  // first that answers /health, so the app is not hostage to one host.
+  //
+  // Pin one explicitly at build time when you need to:
+  //   flutter build apk --dart-define=API_URL=https://your-backend
+  static const String apiUrlOverride =
+      String.fromEnvironment('API_URL', defaultValue: '');
 
+  /// Publicly reachable HTTPS backend — the ONLY candidate that works on
+  /// mobile data, which is what most phones will be on. Override at build
+  /// time with --dart-define=PUBLIC_API_URL=...
+  ///
+  /// PROD-TODO: point this at the permanent deployment. The current value is
+  /// a Cloudflare quick tunnel to the demo laptop, which changes every time
+  /// the tunnel restarts.
+  static const String publicApiUrl = String.fromEnvironment(
+    'PUBLIC_API_URL',
+    defaultValue: 'https://pichunter-commentary-arbitrary-extraordinary.trycloudflare.com',
+  );
+
+  /// Same-LAN laptop addresses. Fast when they apply, skipped in ~4s when
+  /// they do not. 10.0.2.2 is the Android emulator's route to its host.
+  static const List<String> lanApiUrls = [
+    'http://192.168.1.11:8000',
+    'http://10.0.2.2:8000',
+  ];
+
+  /// Best-guess synchronous URL, for the rare caller that cannot await.
+  /// Prefer `await BackendResolver().baseUrl()`.
   static String get baseUrl {
-    if (_envUrl.isNotEmpty) return _envUrl;
-    if (kIsWeb) return 'http://127.0.0.1:8000';
-    if (defaultTargetPlatform == TargetPlatform.android) return 'https://offlinepay-api.onrender.com';
-    return 'https://offlinepay-api.onrender.com'; // production
+    if (apiUrlOverride.isNotEmpty) return apiUrlOverride;
+    if (publicApiUrl.isNotEmpty) return publicApiUrl;
+    return lanApiUrls.first;
   }
 
   // Storage keys
