@@ -34,7 +34,11 @@ class TokenService {
     // Cache tokens locally
     await _cacheTokens(tokensList);
 
-    // Also save to SQLite for offline access
+    // Also save to SQLite for offline access. The server revoked every earlier
+    // token when it issued this batch, so replace the stored set instead of
+    // adding to it — otherwise each refresh piles another batch on and the
+    // offline wallet shows long-dead tokens as active (₹1,000 × 186).
+    await _offlineStorage.clearAllTokens();
     for (final token in tokensList) {
       await _offlineStorage.insertToken(token);
     }

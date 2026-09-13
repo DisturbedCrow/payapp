@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/payment_token.dart';
 import '../services/token_service.dart';
 import '../services/sync_service.dart';
 import '../services/offline_limit_service.dart';
+import '../services/offline_queue_service.dart';
 import '../services/connectivity_service.dart';
 
 class WalletProvider extends ChangeNotifier {
@@ -11,11 +13,20 @@ class WalletProvider extends ChangeNotifier {
   final SyncService _syncService = SyncService();
   final OfflineLimitService _limitService = OfflineLimitService();
   final ConnectivityService _connectivityService = ConnectivityService();
+  final OfflineQueueService _queue = OfflineQueueService();
+
+  WalletProvider() {
+    // Every write to the cached limit — an offline payment, the on-device
+    // model repricing it, a sync restoring the server limit — reloads the
+    // wallet numbers, so the Wallet tab is as live as the dashboard.
+    _limitService.limitChanged.addListener(_reloadLimit);
+  }
 
   List<PaymentToken> _tokens = [];
   double _offlineLimit = 0;
   double _offlineLimitRemaining = 0;
   double _riskScore = 0.5;
+  double _pendingSentTotal = 0;
   Map<String, dynamic> _riskFactors = {};
   bool _isLoading = false;
   bool _isOnline = true;
@@ -34,6 +45,17 @@ class WalletProvider extends ChangeNotifier {
   String? get error => _error;
   double get availableBalance =>
       activeTokens.fold(0.0, (sum, t) => sum + t.amount);
+
+  /// Offline payments this phone has sent that the server has not settled.
+  double get pendingSentTotal => _pendingSentTotal;
+
+  /// The offline limit as one consistent set of numbers. Offline payments
+  /// are authorised against [OfflineLimitSummary.available], not tokens.
+  OfflineLimitSummary get limitSummary => OfflineLimitSummary(
+        approved: _offlineLimit,
+        spent: _pendingSentTotal,
+        available: _offlineLimitRemaining,
+      );
 
   /// Request new offline tokens from backend
   Future<bool> requestTokens({double? amount}) async {
@@ -55,6 +77,8 @@ class WalletProvider extends ChangeNotifier {
       // now so the on-device engine can reprice from the very first offline
       // payment.
       await _limitService.refreshRiskFeatures();
+      _offlineLimitRemaining = await _limitService.getAvailableLimit();
+      _pendingSentTotal = await _pendingSent();
 
       _isLoading = false;
       notifyListeners();
@@ -76,10 +100,30 @@ class WalletProvider extends ChangeNotifier {
       // Load persisted limit from SharedPrefs (works offline, expires after 24h)
       _offlineLimitRemaining = await _limitService.getAvailableLimit();
       _offlineLimit = await _limitService.getTotalLimit();
+      _pendingSentTotal = await _pendingSent();
 
       notifyListeners();
     } catch (e) {
       print('Error loading cached tokens: $e');
+    }
+  }
+
+  Future<void> _reloadLimit() async {
+    try {
+      _offlineLimitRemaining = await _limitService.getAvailableLimit();
+      _offlineLimit = await _limitService.getTotalLimit();
+      _pendingSentTotal = await _pendingSent();
+      notifyListeners();
+    } catch (_) {
+      // Storage unavailable (tests, teardown): keep the last numbers.
+    }
+  }
+
+  Future<double> _pendingSent() async {
+    try {
+      return await _queue.getPendingSentTotal();
+    } catch (_) {
+      return _pendingSentTotal;
     }
   }
 
@@ -118,6 +162,7 @@ class WalletProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _limitService.limitChanged.removeListener(_reloadLimit);
     _connectivitySub?.cancel();
     super.dispose();
   }
@@ -126,4 +171,25 @@ class WalletProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
   }
+}
+
+/// The wallet's offline-limit numbers, derived from one source so they add
+/// up: [approved] is what the server issued, [spent] what this phone has paid
+/// offline since, [available] what it may still pay — after the on-device
+/// model's repricing, which can hold back more than was spent.
+class OfflineLimitSummary {
+  final double approved;
+  final double spent;
+  final double available;
+
+  const OfflineLimitSummary({
+    required this.approved,
+    required this.spent,
+    required this.available,
+  });
+
+  /// Limit the on-device risk model is holding back beyond what was spent.
+  /// Zero when the server re-issued the full limit before pending payments
+  /// synced.
+  double get heldBackByAi => math.max(0, approved - spent - available);
 }

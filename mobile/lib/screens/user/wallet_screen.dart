@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../../providers/auth_provider.dart';
+import '../../ml/edge_limit_engine.dart';
 import '../../providers/wallet_provider.dart';
+import '../../services/offline_limit_service.dart';
 import '../../models/payment_token.dart';
 import '../../config/theme.dart';
 
@@ -12,7 +13,7 @@ class WalletScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletProvider>();
-    final auth = context.watch<AuthProvider>();
+    final limit = wallet.limitSummary;
     final formatter = NumberFormat.currency(symbol: '₹', decimalDigits: 2);
     final dateFormatter = DateFormat('dd MMM, hh:mm a');
 
@@ -44,7 +45,9 @@ class WalletScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Summary card
+            // Summary card — the amount this phone can still pay offline.
+            // Offline payments are authorised against the AI limit, not by
+            // adding up tokens.
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -57,23 +60,32 @@ class WalletScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Total Available',
+                    'Available offline',
                     style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    formatter.format(wallet.availableBalance),
+                    formatter.format(limit.available),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (limit.approved > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'of ${formatter.format(limit.approved)} approved by AI',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12),
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
                       _InfoChip(
-                        label: '${wallet.activeTokens.length} Active',
+                        label: '${wallet.activeTokens.length} tokens',
                         icon: Icons.token,
                       ),
                       const SizedBox(width: 8),
@@ -95,45 +107,61 @@ class WalletScreen extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Offline Limit Details',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _LimitRow(
-                    label: 'Approved Limit',
-                    value: formatter.format(
-                        auth.user?.offlineLimit ?? wallet.offlineLimit),
-                    color: AppTheme.primaryColor,
-                  ),
-                  _LimitRow(
-                    label: 'Used',
-                    value: formatter.format(
-                        auth.user?.offlineLimitUsed ?? 0),
-                    color: AppTheme.warningColor,
-                  ),
-                  _LimitRow(
-                    label: 'Remaining',
-                    value: formatter.format(wallet.offlineLimitRemaining),
-                    color: AppTheme.successColor,
-                  ),
-                  const SizedBox(height: 8),
-                  if (wallet.riskScore > 0)
-                    Text(
-                      'AI Risk Score: ${(wallet.riskScore * 100).toInt()}/100',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade500,
-                        fontStyle: FontStyle.italic,
+              child: ValueListenableBuilder<EdgeReprice?>(
+                valueListenable: EdgeLimitEngine().latest,
+                builder: (context, edge, _) {
+                  // The on-device model's score is current only if it ran
+                  // after the server last issued the limit.
+                  final synced = OfflineLimitService().lastSyncAt.value;
+                  final fromEdge =
+                      edge != null && (synced == null || !edge.at.isBefore(synced));
+                  final risk = fromEdge ? edge.score : wallet.riskScore;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Offline Limit Details',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                ],
+                      const SizedBox(height: 12),
+                      _LimitRow(
+                        label: 'Approved Limit',
+                        value: formatter.format(limit.approved),
+                        color: AppTheme.primaryColor,
+                      ),
+                      _LimitRow(
+                        label: 'Spent offline (not synced)',
+                        value: formatter.format(limit.spent),
+                        color: AppTheme.warningColor,
+                      ),
+                      if (limit.heldBackByAi >= 1)
+                        _LimitRow(
+                          label: 'Held back by AI',
+                          value: formatter.format(limit.heldBackByAi),
+                          color: AppTheme.errorColor,
+                        ),
+                      _LimitRow(
+                        label: 'Remaining',
+                        value: formatter.format(limit.available),
+                        color: AppTheme.successColor,
+                      ),
+                      const SizedBox(height: 8),
+                      if (limit.approved > 0)
+                        Text(
+                          'AI Risk Score: ${(risk * 100).round()}/100 · '
+                          '${fromEdge ? 'on-device model' : 'server model'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
             const SizedBox(height: 20),
