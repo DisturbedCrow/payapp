@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:offline_pay/config/constants.dart';
+import 'package:offline_pay/ml/edge_limit_engine.dart';
 import 'package:offline_pay/services/limit_explanation_service.dart';
 import 'package:offline_pay/widgets/limit_explanation_card.dart';
 
@@ -76,6 +77,10 @@ void main() {
     // Order matters: drop the singleton's in-memory copy first, then install
     // a fresh empty prefs store.
     LimitExplanationService().resetMemory();
+    // The card asks the edge engine for on-device copy first. The engine is a
+    // singleton that memoises its feed load; a future created inside a
+    // previous test's fake-async zone never completes in this one.
+    EdgeLimitEngine().resetForTesting();
     LimitExplanationService.onlineCheckOverride = () async => false;
     SharedPreferences.setMockInitialValues({});
   });
