@@ -1,16 +1,28 @@
-// Feature G — the mic bottom sheet.
+// Feature G / H2 — the mic bottom sheet.
 //
 //   final intent = await showVoicePaySheet(context);
 //   if (intent == null) { /* user cancelled or chose "Type instead" */ }
 //
-// Owns nothing but the listening UX: it returns a parsed [PayIntent] and lets
-// the caller decide what to do with it. No payment objects are created here.
+// Owns nothing but the listening UX: it returns a parsed [PayIntent] (with
+// `provider` set to the speech engine that heard it) and lets the caller
+// decide what to do with it. No payment objects are created here.
+//
+// Capture goes through [VoiceRouter]: Gnani Prisma (cloud, record-then-send,
+// shown as a level meter) when online, the on-device recogniser (live
+// partials) otherwise. If the cloud attempt fails the router switches to
+// on-device and this sheet says so — the first utterance is lost, so the user
+// is asked to say it again rather than shown a silent retry.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../config/constants.dart';
 import '../../config/theme.dart';
+import '../../services/stt/gnani_stt_engine.dart';
+import '../../services/stt/stt_engine.dart';
+import '../../services/stt/voice_router.dart';
 import '../../services/voice_intent_parser.dart';
 import '../../services/voice_service.dart';
 
@@ -29,6 +41,9 @@ Future<PayIntent?> showVoicePaySheet(BuildContext context) {
 
 enum _SheetPhase { starting, listening, thinking, unavailable, nothingHeard }
 
+/// Shown after a cloud failure. Honest: the utterance is gone.
+const String _fallbackNotice = 'On-device mode — say it again';
+
 class _VoicePaySheet extends StatefulWidget {
   const _VoicePaySheet();
 
@@ -44,10 +59,11 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
   /// closes" is indistinguishable from "you said nothing", which is exactly
   /// the confusion that cost us an evening.
   String _diagnostic() {
-    final mode = VoiceService().activeMode;
-    final err = VoiceService().lastError;
     const base = 'Try again — say something like '
         '“Jyati ko do sau rupaye bhejo”.';
+    if (_cloud) return '$base\n\n(recogniser: Gnani Prisma)';
+    final mode = VoiceService().activeMode;
+    final err = VoiceService().lastError;
     if (err != null && err.isNotEmpty) {
       return '$base\n\n(recogniser: ${mode ?? 'unknown'} · $err)';
     }
@@ -56,11 +72,28 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
   }
 
   final VoiceService _voice = VoiceService();
+  final VoiceRouter _router = VoiceRouter.shared;
 
   late final AnimationController _pulse;
   _SheetPhase _phase = _SheetPhase.starting;
   String _partial = '';
   String? _reason;
+
+  /// True while the active engine is the cloud one (level meter, no partials).
+  bool _cloud = false;
+
+  /// Inline notice after a cloud → on-device switch.
+  String? _notice;
+
+  /// Recent mic levels, 0..1, newest last — the waveform.
+  final List<double> _levels = [];
+  static const int _levelBars = 28;
+
+  StreamSubscription<String>? _partialSub;
+  StreamSubscription<double>? _levelSub;
+
+  bool get _uploading =>
+      _cloud && _partial == GnaniSttEngine.uploadingMarker;
 
   @override
   void initState() {
@@ -75,21 +108,62 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
   @override
   void dispose() {
     _pulse.dispose();
-    // Stop the mic but never tear down the shared service — it is a singleton
-    // and the next mic tap needs it alive.
-    _voice.cancel();
+    _partialSub?.cancel();
+    _levelSub?.cancel();
+    // Stop the mic but never tear down the shared services — they are
+    // singletons and the next mic tap needs them alive.
+    _router.cancel();
     super.dispose();
   }
 
-  Future<void> _start() async {
+  /// Pre-flight for [engine]. The on-device engine needs a working recogniser;
+  /// the cloud engine only needs the microphone. Sets [_reason] on failure.
+  Future<bool> _prepare(SttEngine engine) async {
+    if (engine.id == SttProvider.gnani) {
+      final ok = await _voice.ensureMicPermission();
+      if (!ok) _reason = _voice.lastError ?? 'Microphone permission denied';
+      return ok;
+    }
     final ok = await _voice.init();
+    if (!ok) {
+      _reason = _voice.lastError ?? 'Voice isn\'t available on this device';
+    }
+    return ok;
+  }
+
+  /// Points the partial / level listeners at the engine that is listening.
+  void _attach(SttEngine engine) {
+    _partialSub?.cancel();
+    _levelSub?.cancel();
+    if (mounted) {
+      setState(() {
+        _cloud = engine.id == SttProvider.gnani;
+        _partial = '';
+        _levels.clear();
+      });
+    }
+    // Live partials keep the on-device sheet feeling instant; the cloud
+    // engine only ever sends the "uploading" marker here.
+    _partialSub = engine.partials.listen((text) {
+      if (mounted) setState(() => _partial = text);
+    });
+    _levelSub = engine.levels.listen((level) {
+      if (!mounted) return;
+      setState(() {
+        _levels.add(level);
+        if (_levels.length > _levelBars) _levels.removeAt(0);
+      });
+    });
+  }
+
+  Future<void> _start() async {
+    final engine = await _router.selectEngine();
     if (!mounted) return;
 
-    if (!ok) {
-      setState(() {
-        _phase = _SheetPhase.unavailable;
-        _reason = _voice.lastError ?? 'Voice isn\'t available on this device';
-      });
+    final ready = await _prepare(engine);
+    if (!mounted) return;
+    if (!ready) {
+      setState(() => _phase = _SheetPhase.unavailable);
       return;
     }
 
@@ -99,30 +173,49 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
     });
     HapticFeedback.mediumImpact();
 
-    // Live partials keep the sheet feeling instant.
-    final sub = _voice.partials.listen((text) {
-      if (mounted) setState(() => _partial = text);
-    });
-
-    final transcript = await _voice.listenOnce(
+    final capture = await _router.capture(
+      engine: engine,
       timeout: AppConstants.voiceMaxListen,
+      onEngine: _attach,
+      onFallback: (_) async {
+        if (!mounted) return false;
+        setState(() {
+          _notice = _fallbackNotice;
+          _phase = _SheetPhase.starting;
+          _partial = '';
+          _levels.clear();
+        });
+        HapticFeedback.heavyImpact();
+        final ok = await _prepare(_router.local);
+        if (!mounted) return false;
+        if (!ok) {
+          setState(() => _phase = _SheetPhase.unavailable);
+          return false;
+        }
+        setState(() => _phase = _SheetPhase.listening);
+        return true;
+      },
     );
-    await sub.cancel();
-    if (!mounted) return;
+    await _partialSub?.cancel();
+    await _levelSub?.cancel();
+    _partialSub = null;
+    _levelSub = null;
+    if (!mounted || _phase == _SheetPhase.unavailable) return;
 
     HapticFeedback.mediumImpact();
 
-    if (transcript == null || transcript.trim().isEmpty) {
+    final result = capture.result;
+    if (result == null || result.transcript.trim().isEmpty) {
       setState(() => _phase = _SheetPhase.nothingHeard);
       return;
     }
 
     setState(() {
       _phase = _SheetPhase.thinking;
-      _partial = transcript;
+      _partial = result.transcript;
     });
 
-    final intent = parse(transcript);
+    final intent = parseResult(result);
     if (!mounted) return;
     Navigator.of(context).pop(intent);
   }
@@ -131,7 +224,7 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
 
   Future<void> _stopEarly() async {
     HapticFeedback.mediumImpact();
-    await _voice.stop();
+    await _router.stop();
   }
 
   @override
@@ -187,7 +280,7 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
   // ── Listening ───────────────────────────────────────────────────────────
 
   List<Widget> _listeningBody() {
-    final thinking = _phase == _SheetPhase.thinking;
+    final thinking = _phase == _SheetPhase.thinking || _uploading;
     return [
       Text(
         thinking ? 'Samajh raha hoon…' : 'Suniye… boliye',
@@ -199,28 +292,23 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
       ),
       const SizedBox(height: 4),
       Text(
-        _voice.activeLocaleId == null
-            ? 'Hindi ya English'
-            : 'Locale: ${_voice.activeLocaleId}',
+        _cloud
+            ? 'Gnani Prisma · cloud'
+            : _voice.activeLocaleId == null
+                ? 'Hindi ya English'
+                : 'On-device · ${_voice.activeLocaleId}',
         style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
       ),
+      if (_notice != null) ...[
+        const SizedBox(height: 10),
+        _noticePill(_notice!),
+      ],
       const SizedBox(height: 24),
       _pulsingMic(active: !thinking),
       const SizedBox(height: 24),
       ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 92),
-        child: Center(
-          child: Text(
-            _partial.isEmpty ? '“Jyati ko do sau rupaye bhejo”' : _partial,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: _partial.isEmpty ? 16 : 26,
-              height: 1.25,
-              fontWeight: _partial.isEmpty ? FontWeight.w400 : FontWeight.w700,
-              color: _partial.isEmpty ? Colors.grey.shade400 : AppTheme.navyBlue,
-            ),
-          ),
-        ),
+        child: Center(child: _captureText()),
       ),
       const SizedBox(height: 16),
       Row(
@@ -250,6 +338,90 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
         style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
       ),
     ];
+  }
+
+  /// On-device: the live partial (or the hint). Cloud: a level meter and "…"
+  /// while recording, "…" while uploading. Both: the transcript once heard.
+  Widget _captureText() {
+    final heard = _phase == _SheetPhase.thinking;
+    if (_cloud && !heard) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!_uploading) _waveform(),
+          const SizedBox(height: 10),
+          Text(
+            '…',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade500,
+            ),
+          ),
+        ],
+      );
+    }
+    return Text(
+      _partial.isEmpty ? '“Jyati ko do sau rupaye bhejo”' : _partial,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: _partial.isEmpty ? 16 : 26,
+        height: 1.25,
+        fontWeight: _partial.isEmpty ? FontWeight.w400 : FontWeight.w700,
+        color: _partial.isEmpty ? Colors.grey.shade400 : AppTheme.navyBlue,
+      ),
+    );
+  }
+
+  Widget _waveform() {
+    return SizedBox(
+      height: 48,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: List.generate(_levelBars, (i) {
+          // Right-align the history so new samples enter from the right.
+          final offset = _levelBars - _levels.length;
+          final level = i < offset ? 0.0 : _levels[i - offset];
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 90),
+            width: 4,
+            height: 4 + 44 * level,
+            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+            decoration: BoxDecoration(
+              color: AppTheme.navyBlue.withValues(alpha: 0.35 + 0.65 * level),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _noticePill(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.orange.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.cloud_off_rounded, size: 14, color: AppTheme.orange),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.orange,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _pulsingMic({required bool active}) {
@@ -390,6 +562,8 @@ class _VoicePaySheetState extends State<_VoicePaySheet>
                   setState(() {
                     _phase = _SheetPhase.starting;
                     _partial = '';
+                    _notice = null;
+                    _levels.clear();
                   });
                   _start();
                 },

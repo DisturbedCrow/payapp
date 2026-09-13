@@ -98,6 +98,9 @@ class _PayScreenState extends State<PayScreen> {
       MaterialPageRoute(
         builder: (ctx) => VoiceConfirmScreen(
           intent: intent,
+          // refine() builds a fresh PayIntent, so read the speech engine
+          // (Gnani / on-device / mock) from the sheet's own result.
+          provider: localIntent.provider,
           matches: matches,
           availableLimit: limit,
           recentPayees: recent

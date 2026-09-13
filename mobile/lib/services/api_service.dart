@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/constants.dart';
@@ -78,6 +79,73 @@ class ApiService {
       await BackendResolver().invalidate();
       throw ApiException(_transportMessage);
     }
+  }
+
+  /// Uploads one file as `multipart/form-data` (Feature H2: voice audio).
+  ///
+  /// Same contract as [post]: goes through the pinned client, a non-2xx reply
+  /// surfaces as [ApiException] carrying the HTTP status (so a 503 is
+  /// distinguishable from a 400), and any transport failure — including
+  /// [timeout], which bounds the upload AND the response body read —
+  /// invalidates the resolved backend and throws an [ApiException] with a
+  /// null status.
+  Future<Map<String, dynamic>> postMultipart(
+    String endpoint, {
+    Map<String, String> fields = const {},
+    required String fileField,
+    required String filePath,
+    http.MediaType? contentType,
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    final base = await BackendResolver().baseUrl();
+    try {
+      final token = await authToken;
+      final request = http.MultipartRequest('POST', Uri.parse('$base$endpoint'))
+        // No Content-Type here: MultipartRequest sets it with the boundary.
+        ..headers.addAll({
+          if (token != null) 'Authorization': 'Bearer $token',
+        })
+        ..fields.addAll(fields)
+        ..files.add(await http.MultipartFile.fromPath(
+          fileField,
+          filePath,
+          contentType: contentType,
+        ));
+
+      final response = await () async {
+        final streamed = await _client.send(request);
+        return http.Response.fromStream(streamed);
+      }()
+          .timeout(timeout);
+      if (response.statusCode >= 400) {
+        final reason = fallbackReason(response.body);
+        if (reason != null) {
+          throw ApiException(reason, statusCode: response.statusCode);
+        }
+      }
+      return _handleResponse(response);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      await BackendResolver().invalidate();
+      throw ApiException(_transportMessage);
+    }
+  }
+
+  /// The `reason` of a `{"fallback": true, "reason": "…"}` error body (the
+  /// transcribe endpoint's "use on-device" reply, e.g. `rate_limited`), else
+  /// null. Such bodies carry no `detail`, so without this the reason would be
+  /// lost as "Request failed".
+  @visibleForTesting
+  static String? fallbackReason(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['fallback'] == true) {
+        final reason = decoded['reason'];
+        if (reason is String && reason.isNotEmpty) return reason;
+      }
+    } catch (_) {/* not JSON */}
+    return null;
   }
 
   /// Shown when no backend could be reached. Says what the user can do, and

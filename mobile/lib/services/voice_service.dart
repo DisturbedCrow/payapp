@@ -448,6 +448,12 @@ class VoiceService {
     if (c != null && !c.isClosed) c.add(text);
   }
 
+  /// The microphone permission check/prompt used by [init], exposed so the
+  /// cloud engine (Feature H2), which records with a different plugin, goes
+  /// through the same rationale flow. Sets [lastError] on refusal. Never
+  /// throws.
+  Future<bool> ensureMicPermission() => _ensureMicPermission();
+
   Future<bool> _ensureMicPermission() async {
     try {
       var status = await Permission.microphone.status;

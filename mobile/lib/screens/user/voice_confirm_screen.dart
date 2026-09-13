@@ -12,6 +12,7 @@
 import 'package:flutter/material.dart';
 
 import '../../config/theme.dart';
+import '../../services/stt/stt_engine.dart';
 import '../../services/voice_readback_service.dart';
 import '../../services/voice_intent_parser.dart';
 
@@ -32,6 +33,10 @@ class VoiceConfirmScreen extends StatefulWidget {
   /// still land the payment on someone they have paid before.
   final List<ResolvedRecipient> recentPayees;
 
+  /// Speech engine that heard the utterance — 'gnani' | 'mock' | 'on-device'.
+  /// Falls back to [PayIntent.provider]; no chip when both are null.
+  final String? provider;
+
   const VoiceConfirmScreen({
     super.key,
     required this.intent,
@@ -41,6 +46,7 @@ class VoiceConfirmScreen extends StatefulWidget {
     required this.onRerecord,
     required this.onEdit,
     this.recentPayees = const [],
+    this.provider,
   });
 
   @override
@@ -108,6 +114,10 @@ class _VoiceConfirmScreenState extends State<VoiceConfirmScreen> {
             _headline(),
             const SizedBox(height: 14),
             _transcriptQuote(),
+            if (_provider != null) ...[
+              const SizedBox(height: 10),
+              Center(child: _providerChip(_provider!)),
+            ],
             if (_amount == null) ...[
               const SizedBox(height: 16),
               _banner(
@@ -210,6 +220,48 @@ class _VoiceConfirmScreenState extends State<VoiceConfirmScreen> {
           fontStyle: FontStyle.italic,
           color: Colors.grey.shade600,
           height: 1.35,
+        ),
+      ),
+    );
+  }
+
+  String? get _provider => widget.provider ?? widget.intent.provider;
+
+  /// Which engine heard this: calm teal for Gnani Prisma, neutral grey for
+  /// on-device, amber for the backend's mock transcriber (not a real STT).
+  Widget _providerChip(String provider) {
+    final (String label, Color fg, Color bg) = switch (provider) {
+      SttProvider.gnani => (
+          '🎙 Gnani Prisma',
+          const Color(0xFF00695C),
+          const Color(0xFFE0F2F1),
+        ),
+      SttProvider.mock => (
+          '🎙 mock',
+          const Color(0xFF9A6200),
+          const Color(0xFFFFF3D0),
+        ),
+      SttProvider.onDevice => (
+          '🎙 on-device',
+          Colors.grey.shade700,
+          Colors.grey.shade200,
+        ),
+      _ => ('🎙 $provider', Colors.grey.shade700, Colors.grey.shade200),
+    };
+    return Container(
+      key: const ValueKey('voice-provider-chip'),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: fg.withValues(alpha: 0.30)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: fg,
         ),
       ),
     );

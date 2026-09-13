@@ -112,6 +112,33 @@ class AppConstants {
   };
   static const Duration voiceMaxListen = Duration(seconds: 8);
   static const Duration voicePauseFor = Duration(milliseconds: 1200);
+
+  // ── Voice via Gnani Prisma (Feature H2) ──────────────────────
+  // Online voice goes to the backend's /api/ai/transcribe, which holds the
+  // provider key. The app never talks to the STT vendor directly. Offline, or
+  // when the backend says the provider is down, the on-device recogniser
+  // above takes over. Disable at build time with --dart-define=GNANI_VOICE=false
+  static const bool gnaniVoiceEnabled =
+      bool.fromEnvironment('GNANI_VOICE', defaultValue: true);
+  static const String transcribeEndpoint = '/api/ai/transcribe';
+
+  /// After one failed cloud attempt, stay on-device for this long so the user
+  /// is not asked to repeat themselves twice in a row.
+  static const Duration gnaniDegradedFor = Duration(minutes: 3);
+
+  /// Shorter back-off when the backend reports the provider rate-limited us
+  /// (503 `{"fallback": true, "reason": "rate_limited"}`) — that clears in
+  /// seconds, unlike an outage.
+  static const Duration gnaniRateLimitedFor = Duration(seconds: 20);
+  static const Duration gnaniUploadTimeout = Duration(seconds: 12);
+
+  /// Recording auto-stop: give up if nobody speaks within [gnaniNoSpeechTimeout],
+  /// stop [voicePauseFor] after speech ends, never record past [gnaniMaxRecord].
+  static const Duration gnaniNoSpeechTimeout = Duration(seconds: 4);
+  static const Duration gnaniMaxRecord = Duration(seconds: 8);
+
+  /// Microphone level (dBFS) above which a sample counts as speech.
+  static const double gnaniSpeechThresholdDbfs = -35;
 }
 
 class DemoContact {
