@@ -96,6 +96,12 @@ c("Gemini explainer (generated_by=llm)", j.get("generated_by") == "llm", f"{j.ge
 j = requests.post(f"{B}/api/ai/parse-intent", headers=H(atok), json={"transcript": "jyati ko do sau rupaye bhejo"}, timeout=40).json()
 c("voice intent via Gemini", j.get("amount") == 200.0 and j.get("parsed_by") == "llm", f"Rs {j.get('amount')} by={j.get('parsed_by')}")
 
+FEATURE_KEYS = {"transaction_count", "avg_transaction_amount", "kyc_tier", "device_trust_score",
+                "days_since_registration", "fraud_flags", "total_spent"}
+j = requests.get(f"{B}/api/user/offline-limit", headers=H(atok), timeout=40).json()
+c("offline-limit exposes the model's 7 features", set((j.get("features") or {}).keys()) == FEATURE_KEYS,
+  f"model={j.get('model')}")
+
 def silent_wav(seconds=1, rate=16000):
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:

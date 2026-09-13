@@ -93,7 +93,7 @@ def startup_event():
         db = SessionLocal()
         try:
             for user in db.query(User).order_by(User.offline_limit.desc()).limit(6).all():
-                limit, risk = _current_limit_for(user)
+                limit, risk, _features = _current_limit_for(user)
                 if limit > 0:
                     ops.note_limit(ops.mask_user(user.full_name, user.id), limit, risk)
         finally:
@@ -128,24 +128,44 @@ def _local_hhmm(dt) -> str:
         return dt.strftime("%H:%M")
 
 
+# Identifies the model the app's on-device copy must match (Feature I1/I2).
+RISK_MODEL_ID = "gbm-v1"
+
+
+def _risk_features_for(user: User) -> dict:
+    """The 7-feature vector the risk model scores, in the model's column order.
+
+    Plain numbers only — this dict is returned to the phone verbatim so it can
+    run the same model on-device and get the same score.
+    """
+    def _num(value, default, cast):
+        return cast(default if value is None else value)
+
+    transaction_count = _num(user.transaction_count, 0, int)
+    avg_transaction_amount = _num(user.avg_transaction_amount, 0.0, float)
+    days_since_reg = (datetime.utcnow() - user.created_at).days if user.created_at else 0
+    return {
+        "transaction_count": transaction_count,
+        "avg_transaction_amount": avg_transaction_amount,
+        "kyc_tier": _num(user.kyc_tier, 1, int),
+        "device_trust_score": _num(user.device_trust_score, 0.5, float),
+        "days_since_registration": int(days_since_reg),
+        "fraud_flags": _num(user.fraud_flags, 0, int),
+        "total_spent": avg_transaction_amount * transaction_count,
+    }
+
+
 def _current_limit_for(user: User):
     """Recompute a user's AI offline limit + risk score from live features.
 
-    Returned limit is capped by the user's balance, matching
+    Returns (limit, risk_score, features) — `features` is the exact dict the
+    model scored. The limit is capped by the user's balance, matching
     /api/user/offline-limit so the app never sees two different numbers.
     """
-    days_since_reg = (datetime.utcnow() - user.created_at).days if user.created_at else 0
-    risk_score, _factors = compute_risk_score({
-        "transaction_count": user.transaction_count,
-        "avg_transaction_amount": user.avg_transaction_amount,
-        "kyc_tier": user.kyc_tier,
-        "device_trust_score": user.device_trust_score,
-        "days_since_registration": days_since_reg,
-        "fraud_flags": user.fraud_flags,
-        "total_spent": user.avg_transaction_amount * user.transaction_count,
-    })
+    features = _risk_features_for(user)
+    risk_score, _factors = compute_risk_score(features)
     limit = min(compute_offline_limit(risk_score), user.balance)
-    return limit, risk_score
+    return limit, risk_score, features
 
 
 @app.get("/")
@@ -256,7 +276,7 @@ def sync_offline_blobs(
 
     # Server-side AI limit snapshot for the syncing user, recomputed now
     # rather than trusting the stale `offline_limit` column.
-    server_limit_snapshot, server_risk_score = _current_limit_for(current_user)
+    server_limit_snapshot, server_risk_score, _snapshot_features = _current_limit_for(current_user)
 
     # Track daily total for this sender across the batch
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -533,7 +553,7 @@ def sync_offline_blobs(
 
     # Recalculate and return the new offline limit for the syncing user
     old_limit = current_user.offline_limit or 0.0
-    new_limit, new_risk = _current_limit_for(current_user)
+    new_limit, new_risk, new_features = _current_limit_for(current_user)
     current_user.offline_limit = new_limit
     db.commit()
 
@@ -555,6 +575,7 @@ def sync_offline_blobs(
     return {
         "results": results,
         "new_offline_limit": new_limit,
+        "features": new_features,
         "limit_expiry": expiry,
         "limit_signature": limit_signature,
     }
@@ -688,7 +709,7 @@ def get_offline_limit(
     """
     from .services import ops_events as ops
 
-    limit, risk_score = _current_limit_for(current_user)
+    limit, risk_score, features = _current_limit_for(current_user)
     ops.note_limit(ops.mask_user(current_user.full_name, current_user.id), limit, risk_score)
 
     expiry = datetime.utcnow() + timedelta(hours=24)
@@ -703,4 +724,8 @@ def get_offline_limit(
         "expiry": expiry.isoformat(),
         "risk_score": risk_score,
         "limit_signature": limit_signature,
+        # Feature I2: the raw vector the server scored, so the phone can run
+        # the same model on-device and check it lands on the same score.
+        "features": features,
+        "model": RISK_MODEL_ID,
     }
