@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'secure_storage.dart';
 import '../models/user.dart';
 import '../config/constants.dart';
 import 'api_service.dart';
 
 class AuthService {
   final ApiService _api = ApiService();
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage = appSecureStorage;
 
   Future<AppUser> register({
     required String email,

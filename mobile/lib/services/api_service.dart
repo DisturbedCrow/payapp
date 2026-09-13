@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'secure_storage.dart';
 import '../config/constants.dart';
 import 'backend_resolver.dart';
 import 'security/certificate_pinning_service.dart';
@@ -11,7 +12,7 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  final _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage = appSecureStorage;
   final _pinning = CertificatePinningService();
   String? _authToken;
 

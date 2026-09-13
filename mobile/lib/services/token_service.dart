@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'secure_storage.dart';
 import '../models/payment_token.dart';
 import '../config/constants.dart';
 import 'api_service.dart';
@@ -7,7 +8,7 @@ import 'offline_storage.dart';
 
 class TokenService {
   final ApiService _api = ApiService();
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage = appSecureStorage;
   final OfflineStorage _offlineStorage = OfflineStorage();
 
   /// Request new offline tokens from backend

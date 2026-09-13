@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../secure_storage.dart';
 import '../api_service.dart';
 import 'device_key_service.dart';
 import 'device_integrity_service.dart';
@@ -19,9 +20,7 @@ class DeviceRegistrationService {
   final _deviceKeys = DeviceKeyService();
   final _integrity = DeviceIntegrityService();
   final _api = ApiService();
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static const FlutterSecureStorage _storage = appSecureStorage;
   static const String _registeredKey = 'device_registered';
 
   /// Ensure device is registered with backend. Idempotent.

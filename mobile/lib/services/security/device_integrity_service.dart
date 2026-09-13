@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../secure_storage.dart';
 import 'package:crypto/crypto.dart' as crypto_pkg;
 import 'package:path_provider/path_provider.dart';
 
@@ -18,9 +19,7 @@ class DeviceIntegrityService {
   factory DeviceIntegrityService() => _instance;
   DeviceIntegrityService._internal();
 
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static const FlutterSecureStorage _storage = appSecureStorage;
   static const String _killSwitchKey = 'offline_kill_switch';
   static const String _lastCheckKey = 'last_integrity_check';
   static const String _appHashKey = 'app_binary_hash';

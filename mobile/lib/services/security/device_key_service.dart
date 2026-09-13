@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../secure_storage.dart';
 import 'package:pointycastle/export.dart';
 import 'package:uuid/uuid.dart';
 
@@ -21,10 +22,7 @@ class DeviceKeyService {
   factory DeviceKeyService() => _instance;
   DeviceKeyService._internal();
 
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
-  );
+  static const FlutterSecureStorage _storage = appSecureStorage;
 
   static const String _privateKeyKey = 'device_ecdsa_private_key';
   static const String _publicKeyKey = 'device_ecdsa_public_key';

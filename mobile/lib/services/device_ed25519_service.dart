@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'api_service.dart';
+import 'secure_storage.dart';
 
 /// Feature B — the device's Ed25519 signing key.
 ///
@@ -24,10 +25,7 @@ class DeviceEd25519Service {
   factory DeviceEd25519Service() => _instance;
   DeviceEd25519Service._internal();
 
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
-  );
+  static const FlutterSecureStorage _storage = appSecureStorage;
 
   // Storage keys are exactly as the spec names them.
   static const String _skKey = 'device_ed25519_sk';
